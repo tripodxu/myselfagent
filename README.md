@@ -1,244 +1,257 @@
-# MySelfAgent - LangChain Agent 学习项目
+# MySelfAgent - LangChain Agent Learning Project
 
-> **版本**: v1.3.0
-> **状态**: 第一版，未经人工验证，后续功能增量添加，README文档同步更新
-> **最后更新**: 2026-08-29
-
----
-
-## 项目简介
-
-基于 LangChain 的 Agent 系统学习项目，采用 **TDD（测试驱动开发）** 方式构建。
-
-Agent 由四个核心模块组成：LLM（决策者）、工具系统（执行者）、记忆系统（避免失忆）、规划模块（拆分大目标为小步骤）。
-
-### 工作流程
-
-`
-目标输入 -> 规划 -> LLM决策 -> 工具执行 -> 结果存入记忆 -> LLM再决策 -> ... -> 任务完成
-`
-
-核心循环由 LLM 驱动：每轮迭代中，LLM 根据目标和之前的执行结果，选择合适的工具执行，直到检测到任务完成。
+> **Version**: v1.3.0
+> **Status**: First version, not manually verified. Features added incrementally, README updated同步
+> **Last updated**: 2026-08-29
 
 ---
 
-## 快速开始
+## Project Overview
 
-### 1. 环境准备
+A LangChain-based Agent system built with **TDD (Test-Driven Development)**.
 
-`ash
+Four core modules: **LLM** (decision maker) / **Tools** (executor) / **Memory** (persistence) / **Planner** (goal decomposition).
+
+### Workflow
+
+```
+Goal -> Plan -> LLM decides tool -> Execute -> Store result in memory -> LLM re-evaluates -> ... -> Task complete
+```
+
+### Architecture
+
+```
+                    +---------------------------+
+                    |         Agent Core         |
+                    |   (plan->decide->execute   |
+                    |    ->evaluate->loop)       |
+                    +---+-------+-------+-------+
+                        |       |       |
+               +--------+--+ +--+---+ +-+--------+
+               | LLM Planner| | Tools| | Context  |
+               | (decompose | | JSON | | Manager  |
+               |  evaluate  | |Schema| | (tokens, |
+               |  replan)   | +--+---+ | compress)|
+               +--------+--+    |      +----------+
+                        |   +---+----+
+                    +---+---+---+ +--+-------+
+                    |python_exec| |BufferMem |
+                    |file_io    | |(persist) |
+                    |search     | +----------+
+                    |datetime   |
+                    +-----------+
+```
+
+---
+
+## Quick Start
+
+### 1. Setup
+
+```bash
 git clone https://github.com/tripodxu/myselfagent.git
 cd myselfagent
 python -m venv venv
-# Windows:
-venv\Scripts\activate
-# Linux/Mac:
-source venv/bin/activate
+venv\Scripts\activate        # Windows
+# source venv/bin/activate   # Linux/Mac
 pip install -r requirements.txt
-`
+```
 
-### 2. 配置
+### 2. Configure
 
-复制 .env.example 为 .env 并修改配置。需要一个兼容 OpenAI 格式的本地 LLM API。
+Copy `.env.example` to `.env` and edit. Requires a local LLM API compatible with OpenAI responses format.
 
-### 3. 运行
+Default: `http://127.0.0.1:8788/v1/responses` with model `oxx`.
 
-`ash
-# 单次执行
-python main.py "查询今天的日期"
+### 3. Run
 
-# 交互模式
+```bash
+# Single task
+python main.py "What is today's date?"
+
+# Interactive mode
 python main.py --interactive
 
-# 调试模式（可观测每一步的API交互）
+# Debug mode (see LLM streaming output, tool calls, timestamps)
 python main.py --interactive --debug
-`
+```
 
-### 4. 测试
+### 4. Test
 
-`ash
-pytest -v                    # 运行全部测试
-pytest --cov=src             # 查看覆盖率
-pytest tests/test_llm.py     # 运行特定模块测试
-`
+```bash
+pytest -v                    # All tests
+pytest --cov=src             # With coverage
+pytest tests/test_llm.py     # Specific module
+python examples/full_test.py # Full feature test (10 tests)
+```
 
 ---
 
-## 项目结构
+## Project Structure
 
-`
+```
 myselfagent/
-├── main.py                 # 主入口
-├── config.py              # 配置文件
-├── requirements.txt        # 依赖包
-├── .env.example           # 环境变量示例
-├── pytest.ini             # pytest配置
+├── main.py                    # Entry point
+├── config.py                  # Configuration
+├── requirements.txt           # Dependencies
 ├── src/
-│   ├── __init__.py
-│   ├── llm.py             # LLM模块（连接本地API）
-│   ├── agent.py           # Agent核心（决策循环）
-│   ├── tools/             # 工具系统
-│   │   ├── base.py        # 工具基类 + 注册表
-│   │   ├── python_exec.py # Python代码执行
-│   │   ├── file_io.py     # 文件读写
-│   │   ├── search.py      # 搜索工具
-│   │   └── datetime_tool.py # 日期时间工具
-│   ├── memory/            # 记忆系统
-│   │   ├── base.py        # 记忆基类
-│   │   └── buffer.py      # 缓冲记忆（带JSON持久化）
-│   └── planner/           # 规划模块
-│       └── simple.py      # 简单规划器
-├── tests/                 # 78个测试，全部通过
+│   ├── llm.py                 # LLM module (streaming, retry, reasoning effort)
+│   ├── agent.py               # Agent core (layered messages, safety review)
+│   ├── tools/
+│   │   ├── base.py            # BaseTool + ToolRegistry (JSON Schema support)
+│   │   ├── python_exec.py     # Safe Python execution
+│   │   ├── file_io.py         # File read/write/list
+│   │   ├── search.py          # Text/file search (regex)
+│   │   └── datetime_tool.py   # Date/time with Chinese date support
+│   ├── memory/
+│   │   ├── base.py            # BaseMemory
+│   │   ├── buffer.py          # BufferMemory (JSON persistence)
+│   │   └── context_manager.py # Context window manager
+│   └── planner/
+│       ├── llm_planner.py     # LLM-driven planner (decompose/evaluate/replan)
+│       └── simple.py          # Simple planner (fallback)
+├── tests/                     # 104 tests, all passing
 └── examples/
-    └── demo.py            # 演示脚本
-`
-
----
-
-## 模块说明
-
-### LLM 模块 (src/llm.py)
-自定义 LLM 类，连接本地 API（兼容 OpenAI responses 格式）。支持自动重试（指数退避）和超时处理。
-
-### 工具系统 (src/tools/)
-- **Python执行工具**: 安全执行Python代码，限制危险模块导入（subprocess、shutil等）
-- **文件IO工具**: 文件读写操作，带路径安全检查
-- **搜索工具**: 文本/文件搜索，支持正则表达式
-- **日期时间工具**: 获取当前日期时间，支持中文相对日期（大后天、明天等）
-
-### 记忆系统 (src/memory/)
-缓冲记忆实现，支持自动持久化到JSON文件和上下文窗口管理。
-
-### 规划模块 (src/planner/)
-简单规划器，将目标作为单一任务跟踪，由 Agent 循环自主决定执行策略。
-
-### Agent 核心 (src/agent.py)
-整合所有模块的核心循环：
-1. 接收目标
-2. LLM 决策选择工具（带之前执行结果的上下文）
-3. 执行工具
-4. 检查是否获得答案 -> 有答案则提前结束
-5. 将结果反馈给下一轮 LLM 决策
-6. 重复2-5直到完成或达到最大迭代次数
-
----
-
-## 调试模式
-
-使用 --debug 或 -d 参数开启调试模式，可观测：
-- 发送给 LLM 的完整提示词
-- LLM 返回的原始响应
-- 工具选择和参数
-- 执行结果
-- 每步耗时
-
-所有日志带时间戳，便于定位瓶颈。
-
----
-
-## 测试统计
-
-| 模块 | 测试数 | 覆盖内容 |
-|------|--------|----------|
-| LLM模块 | 6 | 初始化、调用、重试、超时 |
-| 工具基类 | 10 | 工具注册、获取、列表 |
-| Python执行工具 | 8 | 执行、错误、安全限制 |
-| 文件IO工具 | 8 | 读写、权限、路径安全 |
-| 搜索工具 | 11 | 文本、文件、正则、过滤 |
-| 记忆系统 | 16 | 存储、检索、持久化 |
-| 规划模块 | 9 | 创建、更新、完成 |
-| Agent核心 | 10 | 初始化、执行、错误处理 |
-
-**总计: 93个测试，全部通过**
-
----
-
-## 学习日志
-
-### v1.1.0 - LLM Planner: 真正的规划引擎 (2026-08-29)
-
-**核心改动**: Planner 从"被动进度记录器"升级为"LLM驱动的规划引擎"
-
-**新增 `src/planner/llm_planner.py`**:
-- `create_plan(goal)` - LLM 将目标分解为具体步骤
-- `evaluate_result(step_result)` - LLM 评估每步结果，决定 continue/stop/replan
-- `replan(new_steps)` - 动态调整计划，保留已完成步骤
-
-**Agent 循环变为三次 LLM 调用**:
-```
-1. LLM 分解: goal -> ["step1", "step2", "step3"]
-2. LLM 决策: step + tools + prior_results -> tool choice
-3. LLM 评估: step_result + remaining_steps -> continue/stop/replan
+    ├── demo.py
+    └── full_test.py           # 10 comprehensive feature tests
 ```
 
-**新增15个测试**: LLM Planner 全部通过
+---
 
-**测试总计**: 93个，全部通过
+## Module Details
+
+### LLM Module (src/llm.py)
+
+- **Streaming**: Real-time SSE parsing, chunks printed in debug mode
+- **Retry**: Exponential backoff (1s, 2s, 4s)
+- **Reasoning effort**: Auto-adjusts (low/medium/high) based on task complexity
+- **Fallback**: Streaming -> sync if stream returns empty
+
+### Tool System (src/tools/)
+
+Each tool has `parameters_schema()` returning JSON Schema for precise LLM tool selection:
+
+- **python_exec**: Safe code execution, blocks dangerous imports (subprocess, socket, etc.)
+- **file_io**: Read/write/list with path whitelist security
+- **search**: Regex search in text or files
+- **datetime**: Current date/time, relative dates (+N, tomorrow, etc.)
+
+### Memory System (src/memory/)
+
+- **BufferMemory**: Message list with max_size, JSON file persistence
+- **ContextManager**: Token tracking, auto-compression, tool output truncation
+
+### Planner (src/planner/)
+
+- **LLMPlanner**: LLM decomposes goal into steps, evaluates each result, supports dynamic replan
+- **SimplePlanner**: Goal as single step, used as fallback
+
+### Agent Core (src/agent.py)
+
+Three-phase LLM loop:
+
+```
+Phase 1: LLM decomposes goal -> ["step1", "step2", "step3"]
+Phase 2: Loop {
+    LLM decides tool (with layered messages: developer/user/assistant history)
+    Safety review (blocks dangerous patterns)
+    Execute tool
+    LLM evaluates result -> continue / stop / replan
+}
+Phase 3: Select best result
+```
+
+### Debug Mode
+
+```
+[20:52:42.265] [GOAL] Goal: analyze files
+[20:52:42.265] [CONFIG] Reasoning effort: medium
+[20:52:42.265] [PLAN] Plan created: 3 steps
+[20:52:42.938] [ITER] Iter 1: Step 1
+[20:52:42.938] [DECIDE] Deciding...
+[20:52:42.940] [MSG] [DEVELOPER] You are an AI agent...
+[20:52:42.941] [MSG] [USER] Goal: analyze files
+[20:52:42.942] [API_REQ] Full prompt sent to LLM
+{"tool":"python_exec","params":{"code":"..."}}    <- streaming output
+[20:52:43.100] [API_RES] LLM response complete (85 chars)
+[20:52:43.100] [SAFETY] Safety: ok
+[20:52:43.101] [EXEC] Executing...
+[20:52:43.150] [RESULT] Result: {"success": true, "output": "..."}
+[20:52:43.151] [EVAL] Eval: stop - goal achieved
+[20:52:43.152] [CTX] Context: 450 tokens, 15% used
+[20:52:43.152] [DONE] Done: 0.89s, 1 iters
+```
 
 ---
 
-### v1.0.1 - Bug修复 (2026-08-29)
+## Test Statistics
 
-修复了 v1.0.0 中发现的6个核心问题：
+| Module | Tests | Coverage |
+|--------|-------|----------|
+| LLM | 6 | init, call, retry, timeout, streaming |
+| Tool base | 10 | registry, schema, get/list |
+| Python exec | 8 | execution, errors, security |
+| File IO | 8 | read, write, list, permissions |
+| Search | 11 | text, file, regex, filters |
+| Memory base | 7 | add, get, clear, search, summary |
+| Buffer memory | 9 | store, retrieve, persistence, max_size |
+| Context manager | 11 | tokens, compression, truncation, stats |
+| LLM Planner | 15 | create, evaluate, replan, fallback |
+| Simple Planner | 9 | create, update, complete, progress |
+| Agent | 10 | init, cycle, errors, memory, safety |
 
-**Bug 1: 编码崩溃 (main.py)**
-- **现象**: ValueError: I/O operation on closed file
-- **根因**: sys.stdout = io.TextIOWrapper(...) 替换了 stream 对象，旧对象被 GC 时关闭了底层 fd
-- **修复**: 使用 sys.stdout.reconfigure(encoding='utf-8') 就地修改，不替换对象
-
-**Bug 2: Agent 不停 (src/agent.py)**
-- **现象**: 任务已在第1轮完成（输出34），但跑满5轮
-- **根因**: 循环按 planner 固定步骤迭代，不检查任务是否已完成
-- **修复**: 每轮执行后调用 has_answer() 检测，有答案立即终止
-
-**Bug 3: 无反馈 (src/agent.py)**
-- **现象**: LLM 不知道之前做了什么，重复执行
-- **根因**: _make_decision() 不传入之前的执行结果
-- **修复**: 将最近3轮的执行结果作为上下文传入 LLM 提示词
-
-**Bug 4: 假规划 (src/planner/simple.py)**
-- **现象**: 所有目标都分解为相同的5个通用步骤
-- **根因**: _decompose_goal() 是硬编码的占位符
-- **修复**: 将整个目标作为单一任务，由 Agent 循环自主驱动
-
-**Bug 5: 无退避重试 (src/llm.py)**
-- **现象**: LLM 过载时连续快速重试，全部超时
-- **根因**: 重试间隔仅1秒
-- **修复**: 指数退避（1s, 2s, 4s）
-
-**Bug 6: 错误的答案 (src/agent.py)**
-- **现象**: 最终结果是"文件已写入"而不是"34"
-- **根因**: inal_result 选最后一个成功结果，而非包含实际答案的
-- **修复**: select_best_result() 优先选择有 output 字段的结果
-
-**其他改进**:
-- python_exec 子进程强制 PYTHONIOENCODING=utf-8，修复中文乱码
-- main.py 交互循环增加 ValueError 捕获，优雅退出
-- 结果展示支持 bytes 类型自动解码
-
-### v1.0.0 - 最小可用版本 (2026-08-29)
-
-**完成内容：**
-- [x] 项目结构搭建
-- [x] LLM模块实现（连接本地 mimo API）
-- [x] 工具系统实现（Python执行、文件IO、搜索、日期时间）
-- [x] 记忆系统实现（缓冲记忆 + JSON持久化）
-- [x] 规划模块实现
-- [x] Agent核心循环
-- [x] 78个测试全部通过
-- [x] 调试模式（带时间戳的可观测日志）
+**Total: 104 tests, all passing**
 
 ---
 
-## 后续扩展计划
+## Changelog
 
-1. **向量记忆**: 使用向量数据库存储长期记忆
-2. **网络搜索**: 集成搜索引擎API
-3. **复杂规划**: 使用LLM分解复杂任务
-4. **多Agent协作**: 多个Agent协同工作
-5. **工具扩展**: 添加更多工具（数据库、API调用等）
-6. **Web UI**: 添加Web界面
+### v1.3.0 - Context Management (2026-08-29)
+
+- `ContextManager`: token tracking, auto-compression, tool output truncation
+- System messages always preserved in context window
+- Budget-aware context retrieval
+- Debug mode shows context utilization
+
+### v1.2.0 - Codex-Inspired Optimizations (2026-08-29)
+
+- JSON Schema tool definitions (`parameters_schema()`)
+- Layered message system (developer / user / assistant)
+- Safety review layer (blocks dangerous patterns before execution)
+- Reasoning effort control (auto low/medium/high)
+
+### v1.1.0 - LLM Planner (2026-08-29)
+
+- `LLMPlanner`: LLM decomposes goal, evaluates results, dynamic replan
+- Agent loop: plan -> decide -> execute -> evaluate (continue/stop/replan)
+- 15 new planner tests
+
+### v1.0.1 - Bug Fixes (2026-08-29)
+
+Fixed 6 critical bugs:
+1. **Encoding crash**: `sys.stdout.reconfigure()` instead of replacing stream
+2. **Agent won't stop**: `has_answer()` early termination
+3. **No feedback**: Prior results passed to LLM
+4. **Fake planner**: Goal as single step instead of fixed 5 generic steps
+5. **No backoff**: Exponential retry (1s, 2s, 4s)
+6. **Wrong result**: `select_best_result()` picks richest answer
+
+### v1.0.0 - Initial Release (2026-08-29)
+
+- Project structure, TDD approach
+- LLM, tools, memory, planner, agent core
+- 78 tests passing
 
 ---
 
-> **注意**: 本项目为学习项目，代码未经人工验证，仅供参考学习使用。后续功能增量添加，README文档同步更新。
+## Roadmap
+
+1. Vector memory (long-term storage)
+2. Web search integration
+3. Multi-agent collaboration
+4. Web UI
+5. More tools (database, API calls)
+
+---
+
+> **Note**: This is a learning project. Code not manually verified. Features added incrementally.
