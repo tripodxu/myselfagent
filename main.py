@@ -30,7 +30,7 @@ from config import (
 )
 
 
-def create_agent() -> Agent:
+def create_agent(debug: bool = False) -> Agent:
     """"创建Agent实例"""
     # 初始化LLM
     llm = LocalLLM(
@@ -63,7 +63,8 @@ def create_agent() -> Agent:
         memory=memory,
         planner=planner,
         tool_registry=tool_registry,
-        max_iterations=PLANNER_MAX_STEPS
+        max_iterations=PLANNER_MAX_STEPS,
+        debug=debug
     )
 
 
@@ -95,7 +96,7 @@ def format_result(result: dict) -> str:
     
     # 显示执行信息
     lines.append(f"")
-    lines.append(f"[执行{result['iterations']}轮，状态: {result['plan_status']}]")
+    lines.append(f"[执行{result['iterations']}轮，状态: {result['plan_status']}，耗时{result.get('total_time', 0):.2f}秒]")
     
     return "\n".join(lines)
 
@@ -104,6 +105,7 @@ def main():
     parser = argparse.ArgumentParser(description="MySelfAgent - LangChain Agent")
     parser.add_argument("goal", nargs="?", help="要执行的目标")
     parser.add_argument("--interactive", "-i", action="store_true", help="交互模式")
+    parser.add_argument("--debug", "-d", action="store_true", help="调试模式，显示详细日志")
     parser.add_argument("--verbose", "-v", action="store_true", help="详细输出")
     
     args = parser.parse_args()
@@ -112,10 +114,12 @@ def main():
     print("MySelfAgent - LangChain Agent 系统")
     print("=" * 60)
     
-    agent = create_agent()
+    agent = create_agent(debug=args.debug)
     print(f"Agent 已初始化")
     print(f"LLM模型: {LLM_MODEL_NAME}")
     print(f"API地址: {LLM_API_BASE}{LLM_API_PATH}")
+    if args.debug:
+        print(f"调试模式: 已开启")
     
     if args.interactive:
         # 交互模式
@@ -128,9 +132,10 @@ def main():
                 if not goal:
                     continue
                 
-                print("\n思考中...")
+                print("\n" + "-" * 60)
                 result = agent.run(goal)
-                print("\n" + format_result(result))
+                print("-" * 60)
+                print(format_result(result))
                 
             except KeyboardInterrupt:
                 print("\n\n退出...")
