@@ -1,4 +1,5 @@
 import json
+import re
 import time
 from typing import Any, Dict, List, Optional
 from datetime import datetime
@@ -89,7 +90,7 @@ class Agent:
             
             self.log(f"决策完成 (耗时{decision_time:.2f}秒)", "DECIDE")
             self.log(f"选择工具: {decision.get('tool')}", "TOOL")
-            self.log(f"工具参数: {json.dumps(decision.get('params', {}), ensure_ascii=False)}", "TOOL")
+            self.log(f"工具参数: {json.dumps(decision.get('params', {}), ensure_ascii=False)[:200]}", "TOOL")
             
             # 执行
             self.log("开始执行工具...", "EXEC")
@@ -191,14 +192,11 @@ class Agent:
             self.log(f"LLM返回的响应:\n{response}", "API_RES")
             
             # 尝试解析JSON
-            json_start = response.find('{')
-            json_end = response.rfind('}') + 1
-            if json_start >= 0 and json_end > json_start:
-                json_str = response[json_start:json_end]
-                decision = json.loads(json_str)
+            decision = self._parse_json(response)
+            if decision:
                 return decision
             else:
-                raise json.JSONDecodeError("No JSON found", response, 0)
+                raise json.JSONDecodeError("No valid JSON found", response, 0)
         except (json.JSONDecodeError, Exception) as e:
             self.log(f"JSON解析失败: {e}，使用默认决策", "ERROR")
             # 如果解析失败，返回默认决策
@@ -206,6 +204,84 @@ class Agent:
                 "tool": tool_names[0] if tool_names else None,
                 "params": {"action": "execute", "code": f"print('执行步骤: {step.description}')"}
             }
+    
+    def _parse_json(self, text: str) -> Optional[Dict[str, Any]]:
+        """"解析JSON，处理各种转义情况"""
+        # 尝试直接解析
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+        
+        # 提取JSON部分
+        json_start = text.find('{')
+        json_end = text.rfind('}') + 1
+        if json_start >= 0 and json_end > json_start:
+            json_str = text[json_start:json_end]
+            
+            # 尝试直接解析
+            try:
+                return json.loads(json_str)
+            except json.JSONDecodeError:
+                pass
+            
+            # 修复常见的转义问题
+            # 1. 修复单个反斜杠
+            fixed = json_str.replace('\\', '\\\\')
+            # 2. 修复换行符
+            fixed = fixed.replace('\n', '\\n')
+            # 3. 修复制表符
+            fixed = fixed.replace('\t', '\\t')
+            
+            try:
+                return json.loads(fixed)
+            except json.JSONDecodeError:
+                pass
+            
+            # 尝试使用正则表达式提取关键信息
+            tool_match = re.search(r'"tool"\s*:\s*"([^"]+)"', json_str)
+            params_match = re.search(r'"params"\s*:\s*\{([^}]+)\}', json_str)
+            
+            if tool_match:
+                tool_name = tool_match.group(1)
+                params = {}
+                
+                if params_match:
+                    params_str = params_match.group(1)
+                    # 提取action
+                    action_match = re.search(r'"action"\s*:\s*"([^"]+)"', params_str)
+                    if action_match:
+                        params["action"] = action_match.group(1)
+                    
+                    # 提取path
+                    path_match = re.search(r'"path"\s*:\s*"([^"]+)"', params_str)
+                    if path_match:
+                        params["path"] = path_match.group(1)
+                    
+                    # 提取content - 处理多行内容
+                    content_match = re.search(r'"content"\s*:\s*"((?:[^"\\]|\\.)*)"', params_str, re.DOTALL)
+                    if content_match:
+                        content = content_match.group(1)
+                        # 处理转义字符
+                        content = content.replace('\\n', '\n')
+                        content = content.replace('\\t', '\t')
+                        content = content.replace('\\"', '"')
+                        content = content.replace('\\\\', '\\')
+                        params["content"] = content
+                    
+                    # 提取code
+                    code_match = re.search(r'"code"\s*:\s*"((?:[^"\\]|\\.)*)"', params_str, re.DOTALL)
+                    if code_match:
+                        code = code_match.group(1)
+                        code = code.replace('\\n', '\n')
+                        code = code.replace('\\t', '\t')
+                        code = code.replace('\\"', '"')
+                        code = code.replace('\\\\', '\\')
+                        params["code"] = code
+                
+                return {"tool": tool_name, "params": params}
+        
+        return None
     
     def _execute_decision(self, decision: Dict[str, Any]) -> Dict[str, Any]:
         """"执行决策"""
