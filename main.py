@@ -71,8 +71,7 @@ def create_agent(debug: bool = False) -> Agent:
         planner=planner,
         tool_registry=tool_registry,
         max_iterations=PLANNER_MAX_STEPS,
-        debug=debug,
-        use_stream=True
+        debug=debug
     )
 
 
