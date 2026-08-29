@@ -1,6 +1,6 @@
 # MySelfAgent - LangChain Agent 学习项目
 
-> **版本**: v1.0.1
+> **版本**: v1.1.0
 > **状态**: 第一版，未经人工验证，后续功能增量添加，README文档同步更新
 > **最后更新**: 2026-08-29
 
@@ -149,11 +149,33 @@ myselfagent/
 | 规划模块 | 9 | 创建、更新、完成 |
 | Agent核心 | 10 | 初始化、执行、错误处理 |
 
-**总计: 78个测试，全部通过**
+**总计: 93个测试，全部通过**
 
 ---
 
 ## 学习日志
+
+### v1.1.0 - LLM Planner: 真正的规划引擎 (2026-08-29)
+
+**核心改动**: Planner 从"被动进度记录器"升级为"LLM驱动的规划引擎"
+
+**新增 `src/planner/llm_planner.py`**:
+- `create_plan(goal)` - LLM 将目标分解为具体步骤
+- `evaluate_result(step_result)` - LLM 评估每步结果，决定 continue/stop/replan
+- `replan(new_steps)` - 动态调整计划，保留已完成步骤
+
+**Agent 循环变为三次 LLM 调用**:
+```
+1. LLM 分解: goal -> ["step1", "step2", "step3"]
+2. LLM 决策: step + tools + prior_results -> tool choice
+3. LLM 评估: step_result + remaining_steps -> continue/stop/replan
+```
+
+**新增15个测试**: LLM Planner 全部通过
+
+**测试总计**: 93个，全部通过
+
+---
 
 ### v1.0.1 - Bug修复 (2026-08-29)
 

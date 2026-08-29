@@ -4,7 +4,7 @@ from src.agent import Agent
 from src.llm import LocalLLM
 from src.tools.base import BaseTool, ToolRegistry
 from src.memory.buffer import BufferMemory
-from src.planner.simple import SimplePlanner
+from src.planner.llm_planner import LLMPlanner
 
 
 # 创建测试工具
@@ -28,7 +28,7 @@ class TestAgent:
     def setup_method(self):
         self.mock_llm = MagicMock(spec=LocalLLM)
         self.memory = BufferMemory()
-        self.planner = SimplePlanner(max_steps=3)
+        self.planner = LLMPlanner(llm=self.mock_llm, max_steps=3)
         self.registry = ToolRegistry()
         self.registry.register(MockTool())
     

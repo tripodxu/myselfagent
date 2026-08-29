@@ -34,7 +34,7 @@ from src.tools.file_io import FileIOTool
 from src.tools.search import SearchTool
 from src.tools.datetime_tool import DateTimeTool
 from src.memory.buffer import BufferMemory
-from src.planner.simple import SimplePlanner
+from src.planner.llm_planner import LLMPlanner
 from src.agent import Agent
 from config import (
     LLM_API_BASE, LLM_API_PATH, LLM_MODEL_NAME,
@@ -61,7 +61,7 @@ def create_agent(debug: bool = False) -> Agent:
     tool_registry.register(DateTimeTool())
 
     memory = BufferMemory(max_size=MEMORY_CONTEXT_WINDOW * 10, persist_path=MEMORY_PERSIST_PATH)
-    planner = SimplePlanner(max_steps=PLANNER_MAX_STEPS)
+    planner = LLMPlanner(llm=llm, max_steps=PLANNER_MAX_STEPS)
 
     return Agent(
         llm=llm,
