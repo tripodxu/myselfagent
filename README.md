@@ -1,7 +1,7 @@
 # MySelfAgent - LangChain Agent 学习项目
 
-> **版本**: v1.3.0
-> **状态**: 第一版，未经人工验证，后续功能增量添加，README同步更新
+> **版本**: v1.4.0
+> **状态**: 第一版，未经人工验证，后续功能增量添加，README 同步更新
 > **最后更新**: 2026-08-29
 
 ---
@@ -15,7 +15,7 @@
 ### 工作流程
 
 ```
-目标输入 -> 规划 -> LLM决策工具 -> 执行 -> 结果存入记忆 -> LLM再评估 -> ... -> 任务完成
+目标输入 -> 规划 -> LLM决策工具 -> 执行 -> 结果存入记忆 -> LLM评估 -> ... -> 任务完成
 ```
 
 ### 架构图
@@ -91,43 +91,43 @@ python examples/full_test.py # 完整功能测试（10项）
 
 ```
 myselfagent/
-├── main.py                    # 主入口
-├── config.py                  # 配置文件
-├── requirements.txt           # 依赖包
-├── src/
-│   ├── llm.py                 # LLM模块（流式输出、重试退避、推理控制）
-│   ├── agent.py               # Agent核心（分层消息、安全审查）
-│   ├── tools/
-│   │   ├── base.py            # 工具基类 + 注册表（JSON Schema）
-│   │   ├── python_exec.py     # 安全执行Python代码
-│   │   ├── file_io.py         # 文件读写列目录
-│   │   ├── search.py          # 文本/文件搜索（正则）
-│   │   └── datetime_tool.py   # 日期时间（支持中文相对日期）
-│   ├── memory/
-│   │   ├── base.py            # 记忆基类
-│   │   ├── buffer.py          # 缓冲记忆（JSON持久化）
-│   │   └── context_manager.py # 上下文管理器
-│   └── planner/
-│       ├── llm_planner.py     # LLM规划器（分解/评估/动态调整）
-│       └── simple.py          # 简单规划器（备用）
-├── tests/                     # 104个测试，全部通过
-└── examples/
-    ├── demo.py
-    └── full_test.py           # 10项完整功能测试
++-- main.py                    # 主入口
++-- config.py                  # 配置文件
++-- requirements.txt           # 依赖包
++-- src/
+|   +-- llm.py                 # LLM模块（流式输出、重试退避、推理控制）
+|   +-- agent.py               # Agent核心（分层消息、安全审查、评估驱动循环）
+|   +-- tools/
+|   |   +-- base.py            # 工具基类 + 注册表（JSON Schema）
+|   |   +-- python_exec.py     # 安全执行Python代码
+|   |   +-- file_io.py         # 文件读写列目录
+|   |   +-- search.py          # 文本/文件搜索（正则）
+|   |   +-- datetime_tool.py   # 日期时间（支持中文相对日期）
+|   +-- memory/
+|   |   +-- base.py            # 记忆基类
+|   |   +-- buffer.py          # 缓冲记忆（JSON持久化）
+|   |   +-- context_manager.py # 上下文管理器
+|   +-- planner/
+|       +-- llm_planner.py     # LLM规划器（分解/评估/动态调整）
+|       +-- simple.py          # 简单规划器（备用）
++-- tests/                     # 104个测试，全部通过
++-- examples/
+    +-- demo.py
+    +-- full_test.py           # 10项完整功能测试
 ```
 
 ---
 
 ## 模块说明
 
-### LLM 模块 (`src/llm.py`)
+### LLM 模块 (src/llm.py)
 
 - **流式输出**：SSE 实时解析，调试模式下逐字打印
 - **指数退避重试**：1s -> 2s -> 4s
 - **推理深度控制**：简单任务 low，复杂任务 high，自动判断
 - **降级机制**：流式失败自动切换同步
 
-### 工具系统 (`src/tools/`)
+### 工具系统 (src/tools/)
 
 每个工具实现 `parameters_schema()` 返回 JSON Schema，LLM 精确选择工具：
 
@@ -136,30 +136,36 @@ myselfagent/
 - **search**：正则搜索文本或文件
 - **datetime**：当前日期时间、相对日期（+N、明天等）
 
-### 记忆系统 (`src/memory/`)
+### 记忆系统 (src/memory/)
 
 - **BufferMemory**：消息列表，max_size 裁剪，JSON 文件持久化
 - **ContextManager**：token 追踪、自动压缩旧消息、工具输出截断（500字符）、系统消息始终保留
 
-### 规划模块 (`src/planner/`)
+### 规划模块 (src/planner/)
 
-- **LLMPlanner**：LLM 将目标分解为步骤，每步执行后评估结果（continue/stop/replan），支持动态调整
+- **LLMPlanner**：LLM 将目标分解为 2-5 个步骤（合并相关操作），每步执行后评估结果（continue/stop/replan），支持动态调整
 - **SimplePlanner**：目标作为单一任务，备用
 
-### Agent 核心 (`src/agent.py`)
+### Agent 核心 (src/agent.py)
 
-三阶段 LLM 循环：
+**评估驱动循环**（v1.4.0 改进）：
 
 ```
-阶段1: LLM 分解目标 -> ["步骤1", "步骤2", "步骤3"]
+阶段1: LLM 分解目标 -> ["步骤1", "步骤2"]（限制2-5步，合并相关操作）
 阶段2: 循环 {
     LLM 决策工具（分层消息：系统规则/用户目标/历史结果）
     安全审查（拦截危险模式）
     执行工具
-    LLM 评估结果 -> continue / stop / replan
+    LLM 评估结果 -> continue / stop / replan  <-- 唯一的停止条件
 }
 阶段3: 选择最佳结果返回
 ```
+
+**v1.4.0 关键改进**：
+- 移除 `has_answer()` 作为提前终止条件（之前读到文件内容就停了）
+- 停止决策完全由 LLM `evaluate_result` 控制
+- Planner 限制 2-5 步，鼓励合并相关操作
+- 避免过度分解（之前9步，现在2-5步）
 
 ### 调试模式
 
@@ -205,6 +211,20 @@ myselfagent/
 ---
 
 ## 更新日志
+
+### v1.4.0 - 评估驱动循环 (2026-08-29)
+
+**核心修复**：
+- 移除 `has_answer()` 作为提前终止条件，避免中间步骤（如读文件）触发停止
+- 停止决策完全由 LLM `evaluate_result` 控制
+- Planner 限制 2-5 步，鼓励合并相关操作到一个 python_exec 调用
+- `_build_messages` 增加 "Combine related operations" 规则
+
+**修复的问题**：
+- Agent 读取文件后立即停止（1轮迭代） -> 现在会继续执行直到 LLM 评估认为目标达成
+- Planner 过度分解（9步） -> 现在限制 2-5 步
+- LLM 效率低（每轮只做一个操作） -> prompt 鼓励合并操作
+- Mock 测试缺少 `use_stream` 属性 -> 已修复
 
 ### v1.3.0 - 上下文管理 (2026-08-29)
 

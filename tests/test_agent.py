@@ -27,6 +27,7 @@ class FailingTool(BaseTool):
 class TestAgent:
     def setup_method(self):
         self.mock_llm = MagicMock(spec=LocalLLM)
+        self.mock_llm.use_stream = False
         self.memory = BufferMemory()
         self.planner = LLMPlanner(llm=self.mock_llm, max_steps=3)
         self.registry = ToolRegistry()

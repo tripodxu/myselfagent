@@ -219,6 +219,7 @@ def test_agent_cycle():
     sep("8. Agent Full Cycle (Mock LLM)")
     from unittest.mock import MagicMock
     mock = MagicMock(spec=LocalLLM)
+    mock.use_stream = False
     mock._call.side_effect = [
         json.dumps({"steps": ["Create fib script", "Run it", "Verify"]}),
         json.dumps({"tool": "python_exec", "params": {"code": "def fib(n):\n    a,b=0,1\n    for _ in range(n): a,b=b,a+b\n    return a\nprint(f'fib(10)={fib(10)}')"}}),
@@ -295,6 +296,7 @@ def test_ctx_agent():
     sep("10. Context + Agent Integration")
     from unittest.mock import MagicMock
     mock = MagicMock(spec=LocalLLM)
+    mock.use_stream = False
     mock._call.side_effect = [
         json.dumps({"steps": ["step1"]}),
         json.dumps({"tool": "datetime", "params": {"action": "now"}}),

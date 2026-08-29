@@ -25,7 +25,7 @@ class Plan:
 
 
 class LLMPlanner:
-    def __init__(self, llm=None, max_steps: int = 10):
+    def __init__(self, llm=None, max_steps: int = 5):
         self.llm = llm
         self.max_steps = max_steps
         self.plans: Dict[str, Plan] = {}
@@ -33,10 +33,8 @@ class LLMPlanner:
     def create_plan(self, goal: str, plan_id: str = None) -> Plan:
         if plan_id is None:
             plan_id = f"plan_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-
         steps_desc = self._decompose_with_llm(goal)
         steps = [Step(id=i + 1, description=s) for i, s in enumerate(steps_desc)]
-
         plan = Plan(goal=goal, steps=steps)
         self.plans[plan_id] = plan
         return plan
@@ -96,17 +94,13 @@ class LLMPlanner:
         plan = self.get_plan(plan_id)
         if not plan:
             return {"action": "continue", "reason": "plan not found"}
-
         step_desc = ""
         for s in plan.steps:
             if s.id == step_id:
                 step_desc = s.description
                 break
-
         remaining = [s.description for s in plan.steps if s.status == "pending"]
-
         prompt = self._build_evaluate_prompt(goal, step_desc, result, remaining)
-
         try:
             response = self.llm._call(prompt)
             parsed = self._parse_json(response)
@@ -114,18 +108,18 @@ class LLMPlanner:
                 return parsed
         except Exception:
             pass
-
+        # Fallback: if no remaining steps, stop; otherwise continue
+        if not remaining:
+            return {"action": "stop", "reason": "all steps completed"}
         return {"action": "continue", "reason": "evaluation failed, defaulting to continue"}
 
     def replan(self, plan_id: str, new_steps: List[str]) -> bool:
         plan = self.get_plan(plan_id)
         if not plan:
             return False
-
         completed = [s for s in plan.steps if s.status == "completed"]
         next_id = len(completed) + 1
         new_step_objects = [Step(id=next_id + i, description=desc, status="pending") for i, desc in enumerate(new_steps)]
-
         plan.steps = completed + new_step_objects
         plan.status = "active"
         return True
@@ -149,18 +143,18 @@ class LLMPlanner:
     def _decompose_with_llm(self, goal: str) -> List[str]:
         if not self.llm:
             return [goal]
-
         prompt = (
-            f"Please decompose this goal into concrete, actionable steps.\n"
+            f"Decompose this goal into concrete, actionable steps.\n"
             f"Goal: {goal}\n\n"
             f"Return ONLY a JSON object: {{\"steps\": [\"step1\", \"step2\", ...]}}\n"
             f"Rules:\n"
-            f"- Each step should be a single concrete action\n"
-            f"- Maximum {self.max_steps} steps\n"
+            f"- Maximum 5 steps, prefer 2-3 steps\n"
+            f"- Each step should combine related actions into ONE unit\n"
+            f"- Each step should be executable in a single tool call\n"
+            f"- Do NOT include review/confirm/evaluate steps\n"
             f"- Steps should be ordered logically\n"
             f"- Do NOT include any text outside the JSON"
         )
-
         try:
             response = self.llm._call(prompt)
             parsed = self._parse_json(response)
@@ -169,7 +163,6 @@ class LLMPlanner:
                 return steps[:self.max_steps] if steps else [goal]
         except Exception:
             pass
-
         return [goal]
 
     def _build_evaluate_prompt(self, goal: str, step_desc: str, result: dict, remaining: List[str]) -> str:
@@ -179,18 +172,16 @@ class LLMPlanner:
             result_summary = f"Success: {output}"
         else:
             result_summary = f"Failed: {result.get('error', 'unknown error')[:200]}"
-
         remaining_text = ", ".join(remaining[:5]) if remaining else "none"
-
         return (
             f"Goal: {goal}\n"
             f"Completed step: {step_desc}\n"
             f"Step result: {result_summary}\n"
             f"Remaining steps: {remaining_text}\n\n"
-            f"Based on the result, what should we do next?\n"
+            f"Based on the result, does the output fully satisfy the original goal?\n"
             f"Return ONLY a JSON object:\n"
-            f'- {{"action": "continue", "reason": "why continue"}} - if more steps needed\n'
-            f'- {{"action": "stop", "reason": "why stop"}} - if goal is fully achieved\n'
+            f'- {{"action": "continue", "reason": "why continue"}} - if goal not yet fully achieved\n'
+            f'- {{"action": "stop", "reason": "why stop"}} - if goal is FULLY achieved with correct output\n'
             f'- {{"action": "replan", "reason": "why replan", "new_steps": ["step1", "step2"]}} - if plan needs adjustment'
         )
 
@@ -199,7 +190,6 @@ class LLMPlanner:
             return json.loads(text)
         except json.JSONDecodeError:
             pass
-
         json_start = text.find("{")
         json_end = text.rfind("}") + 1
         if json_start >= 0 and json_end > json_start:
@@ -208,13 +198,11 @@ class LLMPlanner:
                 return json.loads(json_str)
             except json.JSONDecodeError:
                 pass
-
             fixed = json_str.replace("\\n", "\n").replace("\\t", "\t")
             try:
                 return json.loads(fixed)
             except json.JSONDecodeError:
                 pass
-
         return None
 
     def _check_plan_completion(self, plan_id: str) -> None:

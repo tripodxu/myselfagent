@@ -117,7 +117,7 @@ def main():
     args = parser.parse_args()
 
     print("=" * 60)
-    print("MySelfAgent - LangChain Agent 系统")
+    print("MySelfAgent v1.4.0 - LangChain Agent 系统")
     print("=" * 60)
 
     agent = create_agent(debug=args.debug)
