@@ -6,6 +6,7 @@ from datetime import datetime
 from .llm import LocalLLM
 from .tools.base import BaseTool, ToolRegistry
 from .memory.base import BaseMemory
+from .memory.context_manager import ContextManager
 from .planner.llm_planner import LLMPlanner
 
 
@@ -66,6 +67,7 @@ class Agent:
     ):
         self.llm = llm or LocalLLM()
         self.memory = memory
+        self.context = ContextManager(memory=memory, max_tokens=3000)
         self.planner = planner or LLMPlanner(llm=self.llm)
         self.tool_registry = tool_registry or ToolRegistry()
         self.max_iterations = max_iterations
@@ -105,7 +107,7 @@ class Agent:
 
     # === Message Builder (layered like Codex) ===
     def _build_messages(self, goal: str, step_desc: str, prior_results: list) -> list:
-        """Build layered messages: developer -> user -> assistant history -> tool results."""
+        """Build layered messages with context management."""
         messages = []
 
         # Layer 1: Developer instructions (system rules)
@@ -140,6 +142,11 @@ class Agent:
                     history_lines.append(f"Step {pr['step']}: {pr['tool']} -> FAILED: {err_msg}")
             messages.append({"role": "assistant", "content": "Previous results:\n" + "\n".join(history_lines)})
 
+        # Add context stats to developer message for awareness
+        stats = self.context.get_stats()
+        if stats["has_summary"]:
+            messages.insert(1, {"role": "system", "content": f"Context summary: {self.context.summary}"})
+
         return messages
 
     def run(self, goal: str) -> Dict[str, Any]:
@@ -166,7 +173,7 @@ class Agent:
             self.log(f"  Step {i+1}: {s.description}", "PLAN")
 
         if self.memory:
-            self.memory.add_message("system", f"Goal: {goal}")
+            self.context.add_message("system", f"Goal: {goal}")
 
         # Phase 2: Execute plan with feedback loop
         while self.iteration < self.max_iterations:
@@ -216,7 +223,7 @@ class Agent:
                                  "decision_time": decision_time, "exec_time": exec_time})
 
             if self.memory:
-                self.memory.add_message("assistant", f"Step {self.iteration}: {result_str}")
+                self.context.add_message("assistant", f"Step {self.iteration}: {result_str}")
 
             if result.get("success", False):
                 self.planner.mark_step_completed(plan_id, next_step.id, result)
@@ -248,6 +255,8 @@ class Agent:
 
         final_result = select_best_result(step_results)
         total_time = time.time() - start_time
+        ctx_stats = self.context.get_stats()
+        self.log(f"Context: {ctx_stats['estimated_tokens']} tokens, {ctx_stats['utilization']*100:.0f}% used", "CTX")
         self.log(f"Done: {total_time:.2f}s, {self.iteration} iters", "DONE")
 
         self.planner.mark_plan_completed(plan_id)
