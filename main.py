@@ -51,7 +51,9 @@ def create_agent(debug: bool = False) -> Agent:
         api_path=LLM_API_PATH,
         model_name=LLM_MODEL_NAME,
         timeout=LLM_TIMEOUT,
-        max_retries=LLM_MAX_RETRIES
+        max_retries=LLM_MAX_RETRIES,
+        debug=debug,
+        use_stream=True
     )
 
     tool_registry = ToolRegistry()
@@ -69,7 +71,8 @@ def create_agent(debug: bool = False) -> Agent:
         planner=planner,
         tool_registry=tool_registry,
         max_iterations=PLANNER_MAX_STEPS,
-        debug=debug
+        debug=debug,
+        use_stream=True
     )
 
 
@@ -121,6 +124,7 @@ def main():
     agent = create_agent(debug=args.debug)
     print(f"Agent 已初始化")
     print(f"LLM模型: {LLM_MODEL_NAME}")
+    print(f"Stream: 已开启")
     print(f"API地址: {LLM_API_BASE}{LLM_API_PATH}")
     if args.debug:
         print(f"调试模式: 已开启")

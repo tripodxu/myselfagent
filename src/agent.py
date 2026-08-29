@@ -281,7 +281,11 @@ class Agent:
 
         try:
             response = self.llm._call(prompt)
-            self.log(f"LLM response: {response[:300]}", "API_RES")
+            if self.llm.use_stream and self.debug:
+                # Streaming already printed chunks, just log completion
+                self.log(f"LLM response complete ({len(response)} chars)", "API_RES")
+            else:
+                self.log(f"LLM response: {response[:300]}", "API_RES")
             decision = self._parse_json(response)
             if decision:
                 return decision
