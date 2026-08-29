@@ -14,6 +14,7 @@ from src.tools.base import ToolRegistry
 from src.tools.python_exec import PythonExecTool
 from src.tools.file_io import FileIOTool
 from src.tools.search import SearchTool
+from src.tools.datetime_tool import DateTimeTool
 from src.memory.buffer import BufferMemory
 from src.planner.simple import SimplePlanner
 from src.agent import Agent
@@ -42,6 +43,7 @@ def create_agent() -> Agent:
     tool_registry.register(PythonExecTool(timeout=PYTHON_EXEC_TIMEOUT))
     tool_registry.register(FileIOTool(allowed_paths=FILE_IO_ALLOWED_PATHS))
     tool_registry.register(SearchTool())
+    tool_registry.register(DateTimeTool())
     
     # 初始化记忆
     memory = BufferMemory(
@@ -76,6 +78,8 @@ def main():
     
     agent = create_agent()
     print("Agent 已初始化")
+    print(f"LLM模型: {LLM_MODEL_NAME}")
+    print(f"API地址: {LLM_API_BASE}{LLM_API_PATH}")
     
     if args.interactive:
         # 交互模式

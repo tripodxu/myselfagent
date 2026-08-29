@@ -9,8 +9,8 @@ def test_llm_initialization():
     llm = LocalLLM()
     assert llm.api_base == "http://127.0.0.1:8788"
     assert llm.api_path == "/v1/responses"
-    assert llm.model_name == "default"
-    assert llm.timeout == 30
+    assert llm.model_name == "mimo-v2.5-pro"
+    assert llm.timeout == 60
     assert llm.max_retries == 3
 
 
@@ -20,13 +20,13 @@ def test_llm_initialization_with_params():
         api_base="http://custom:9999",
         api_path="/custom",
         model_name="custom-model",
-        timeout=60,
+        timeout=30,
         max_retries=5
     )
     assert llm.api_base == "http://custom:9999"
     assert llm.api_path == "/custom"
     assert llm.model_name == "custom-model"
-    assert llm.timeout == 60
+    assert llm.timeout == 30
     assert llm.max_retries == 5
 
 
@@ -36,7 +36,9 @@ def test_llm_call_success(mock_post):
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {
-        "choices": [{"message": {"content": "Hello, World!"}}]
+        "output": [
+            {"type": "message", "content": [{"type": "output_text", "text": "Hello, World!"}]}
+        ]
     }
     mock_post.return_value = mock_response
     
@@ -57,7 +59,9 @@ def test_llm_call_retry_on_failure(mock_post):
     mock_success = MagicMock()
     mock_success.status_code = 200
     mock_success.json.return_value = {
-        "choices": [{"message": {"content": "Success after retry"}}]
+        "output": [
+            {"type": "message", "content": [{"type": "output_text", "text": "Success after retry"}]}
+        ]
     }
     
     mock_post.side_effect = [mock_fail, mock_fail, mock_success]

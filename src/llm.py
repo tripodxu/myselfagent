@@ -10,8 +10,8 @@ class LocalLLM(LLM):
     
     api_base: str = "http://127.0.0.1:8788"
     api_path: str = "/v1/responses"
-    model_name: str = "default"
-    timeout: int = 30
+    model_name: str = "mimo-v2.5-pro"
+    timeout: int = 60
     max_retries: int = 3
     
     @property
@@ -27,10 +27,10 @@ class LocalLLM(LLM):
         """"调用本地API"""
         url = f"{self.api_base}{self.api_path}"
         
+        # 使用responses API格式
         payload = {
             "model": self.model_name,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.7,
+            "input": prompt,
         }
         
         if stop:
@@ -49,11 +49,19 @@ class LocalLLM(LLM):
                 
                 result = response.json()
                 
-                # 兼容OpenAI格式响应
-                if "choices" in result:
+                # 解析responses API格式
+                if "output" in result:
+                    for item in result["output"]:
+                        if item.get("type") == "message":
+                            content = item.get("content", [])
+                            for c in content:
+                                if c.get("type") == "output_text":
+                                    return c.get("text", "")
+                    # 如果没找到message，尝试直接返回output
+                    return str(result["output"])
+                # 兼容OpenAI格式
+                elif "choices" in result:
                     return result["choices"][0]["message"]["content"]
-                elif "output" in result:
-                    return result["output"]
                 else:
                     return str(result)
                     
