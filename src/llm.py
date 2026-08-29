@@ -6,38 +6,38 @@ from langchain_core.callbacks.manager import CallbackManagerForLLMRun
 
 
 class LocalLLM(LLM):
-    """"连接本地API的自定义LLM类"""
-    
+    """连接本地API的自定义LLM类"""
+
     api_base: str = "http://127.0.0.1:8788"
     api_path: str = "/v1/responses"
     model_name: str = "mimo-v2.5-pro"
     timeout: int = 60
     max_retries: int = 3
-    
+
     @property
     def _llm_type(self) -> str:
         return "local"
-    
+
     def _call(
         self,
         prompt: str,
         stop: Optional[List[str]] = None,
         run_manager: Optional[CallbackManagerForLLMRun] = None,
     ) -> str:
-        """"调用本地API"""
+        """调用本地API"""
         url = f"{self.api_base}{self.api_path}"
-        
+
         # 使用responses API格式
         payload = {
             "model": self.model_name,
             "input": prompt,
         }
-        
+
         if stop:
             payload["stop"] = stop
-        
+
         last_exception = None
-        
+
         for attempt in range(self.max_retries):
             try:
                 response = requests.post(
@@ -46,9 +46,9 @@ class LocalLLM(LLM):
                     timeout=self.timeout
                 )
                 response.raise_for_status()
-                
+
                 result = response.json()
-                
+
                 # 解析responses API格式
                 if "output" in result:
                     for item in result["output"]:
@@ -64,22 +64,25 @@ class LocalLLM(LLM):
                     return result["choices"][0]["message"]["content"]
                 else:
                     return str(result)
-                    
+
             except requests.Timeout as e:
                 last_exception = e
                 if attempt < self.max_retries - 1:
-                    time.sleep(1)
+                    # 指数退避：2^attempt 秒 (1, 2, 4...)
+                    wait_time = 2 ** attempt
+                    time.sleep(wait_time)
                     continue
                 raise Exception(f"请求超时 (已重试{self.max_retries}次): {e}")
             except requests.RequestException as e:
                 last_exception = e
                 if attempt < self.max_retries - 1:
-                    time.sleep(1)
+                    wait_time = 2 ** attempt
+                    time.sleep(wait_time)
                     continue
                 raise Exception(f"请求失败 (已重试{self.max_retries}次): {e}")
-        
+
         raise Exception(f"所有重试都失败: {last_exception}")
-    
+
     @property
     def _identifying_params(self) -> dict:
         return {

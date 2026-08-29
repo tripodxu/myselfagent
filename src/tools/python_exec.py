@@ -1,5 +1,6 @@
 import subprocess
 import sys
+import os
 from typing import Any
 from .base import BaseTool
 
@@ -12,21 +13,25 @@ BLOCKED_IMPORTS = [
 
 
 class PythonExecTool(BaseTool):
-    """"Python代码执行工具"""
-    
+    """Python代码执行工具"""
+
     def __init__(self, timeout: int = 10):
         super().__init__(
             name="python_exec",
             description="执行Python代码并返回结果"
         )
         self.timeout = timeout
-    
+
     def execute(self, code: str, **kwargs) -> Any:
-        """"执行Python代码"""
+        """执行Python代码"""
         # 检查是否有被禁止的导入
         self._check_blocked_imports(code)
-        
+
         try:
+            # 修复Windows编码：强制子进程使用UTF-8
+            env = os.environ.copy()
+            env['PYTHONIOENCODING'] = 'utf-8'
+
             result = subprocess.run(
                 [sys.executable, "-c", code],
                 capture_output=True,
@@ -34,9 +39,10 @@ class PythonExecTool(BaseTool):
                 timeout=self.timeout,
                 cwd=kwargs.get("cwd", "."),
                 encoding='utf-8',
-                errors='replace'
+                errors='replace',
+                env=env
             )
-            
+
             if result.returncode == 0:
                 return {
                     "success": True,
@@ -49,7 +55,7 @@ class PythonExecTool(BaseTool):
                     "output": result.stdout,
                     "error": result.stderr
                 }
-                
+
         except subprocess.TimeoutExpired:
             return {
                 "success": False,
@@ -62,9 +68,9 @@ class PythonExecTool(BaseTool):
                 "output": "",
                 "error": str(e)
             }
-    
+
     def _check_blocked_imports(self, code: str) -> None:
-        """"检查代码中是否有被禁止的导入"""
+        """检查代码中是否有被禁止的导入"""
         import ast
         try:
             tree = ast.parse(code)
