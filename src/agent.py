@@ -28,6 +28,7 @@ class Agent:
     def run(self, goal: str) -> Dict[str, Any]:
         """"运行Agent"""
         self.iteration = 0
+        step_results = []  # 收集所有步骤结果
         
         # 创建计划
         plan = self.planner.create_plan(goal)
@@ -51,6 +52,14 @@ class Agent:
             # 执行
             result = self._execute_decision(decision)
             
+            # 收集结果
+            step_results.append({
+                "step": next_step.id,
+                "description": next_step.description,
+                "tool": decision.get("tool"),
+                "result": result
+            })
+            
             # 存储结果到记忆
             if self.memory:
                 self.memory.add_message("assistant", f"步骤{next_step.id}: {result}")
@@ -61,8 +70,19 @@ class Agent:
             else:
                 self.planner.mark_step_failed(plan_id, next_step.id, result.get("error"))
             
+            # 如果这一步成功了，可以提前结束
+            if result.get("success"):
+                break
+            
             # 检查是否完成
             if self.planner.is_plan_complete(plan_id):
+                break
+        
+        # 找到最后一个成功的结果
+        final_result = None
+        for sr in reversed(step_results):
+            if sr["result"].get("success"):
+                final_result = sr["result"]
                 break
         
         # 返回最终结果
@@ -70,7 +90,8 @@ class Agent:
             "goal": goal,
             "iterations": self.iteration,
             "plan_status": self.planner.get_plan(plan_id).status,
-            "progress": self.planner.get_plan_progress(plan_id)
+            "final_result": final_result,
+            "step_results": step_results
         }
     
     def _make_decision(self, step, goal: str) -> Dict[str, Any]:
@@ -79,22 +100,40 @@ class Agent:
         tools = self.tool_registry.list_tools()
         tool_names = [t.name for t in tools]
         
+        # 获取工具描述和参数说明
+        tool_descriptions = []
+        for tool in tools:
+            desc = f"- {tool.name}: {tool.description}"
+            if tool.name == "datetime":
+                desc += "\n  参数: action (可选: now, date, time, weekday)"
+            elif tool.name == "python_exec":
+                desc += "\n  参数: code (Python代码字符串)"
+            elif tool.name == "file_io":
+                desc += "\n  参数: action (read/write/list), path, content"
+            elif tool.name == "search":
+                desc += "\n  参数: action (text/file/files), pattern, text/target"
+            tool_descriptions.append(desc)
+        
         # 构建提示词
-        prompt = f"""
-目标: {goal}
-当前步骤: {step.description}
-可用工具: {tool_names}
-
-请选择合适的工具并提供参数。返回JSON格式:
-{{"tool": "工具名", "params": {{"参数名": "参数值"}}}}
-"""
+        prompt = f"目标: {goal}\n当前步骤: {step.description}\n\n"
+        prompt += "可用工具:\n"
+        prompt += "\n".join(tool_descriptions)
+        prompt += "\n\n请选择合适的工具并提供参数。只返回JSON格式，不要返回其他内容。\n"
+        prompt += '{"tool": "工具名", "params": {"参数名": "参数值"}}'
         
         # 调用LLM
         try:
             response = self.llm._call(prompt)
             # 尝试解析JSON
-            decision = json.loads(response)
-            return decision
+            # 提取JSON部分（可能包含其他文本）
+            json_start = response.find('{')
+            json_end = response.rfind('}') + 1
+            if json_start >= 0 and json_end > json_start:
+                json_str = response[json_start:json_end]
+                decision = json.loads(json_str)
+                return decision
+            else:
+                raise json.JSONDecodeError("No JSON found", response, 0)
         except (json.JSONDecodeError, Exception) as e:
             # 如果解析失败，返回默认决策
             return {

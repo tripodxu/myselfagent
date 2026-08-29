@@ -6,7 +6,7 @@ load_dotenv()
 # LLM配置
 LLM_API_BASE = os.getenv("LLM_API_BASE", "http://127.0.0.1:8788")
 LLM_API_PATH = os.getenv("LLM_API_PATH", "/v1/responses")
-LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME", "mimo-v2.5-pro")
+LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME", "defalut")
 LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", "60"))
 LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "3"))
 

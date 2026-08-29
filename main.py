@@ -9,6 +9,9 @@ import argparse
 import sys
 import os
 
+# 设置UTF-8编码
+sys.stdout.reconfigure(encoding='utf-8')
+
 from src.llm import LocalLLM
 from src.tools.base import ToolRegistry
 from src.tools.python_exec import PythonExecTool
@@ -64,6 +67,39 @@ def create_agent() -> Agent:
     )
 
 
+def format_result(result: dict) -> str:
+    """"格式化结果显示"""
+    lines = []
+    
+    # 显示最终结果
+    final = result.get("final_result")
+    if final:
+        if final.get("date"):
+            lines.append(f"日期: {final['date']}")
+        if final.get("time"):
+            lines.append(f"时间: {final['time']}")
+        if final.get("datetime"):
+            lines.append(f"日期时间: {final['datetime']}")
+        if final.get("weekday"):
+            lines.append(f"星期: {final['weekday']}")
+        if final.get("output"):
+            lines.append(f"输出: {final['output']}")
+        if final.get("content"):
+            lines.append(f"内容: {final['content']}")
+        if final.get("result"):
+            lines.append(f"结果: {final['result']}")
+    
+    # 如果没有特殊字段，显示原始结果
+    if not lines and final:
+        lines.append(f"结果: {final}")
+    
+    # 显示执行信息
+    lines.append(f"")
+    lines.append(f"[执行{result['iterations']}轮，状态: {result['plan_status']}]")
+    
+    return "\n".join(lines)
+
+
 def main():
     parser = argparse.ArgumentParser(description="MySelfAgent - LangChain Agent")
     parser.add_argument("goal", nargs="?", help="要执行的目标")
@@ -77,7 +113,7 @@ def main():
     print("=" * 60)
     
     agent = create_agent()
-    print("Agent 已初始化")
+    print(f"Agent 已初始化")
     print(f"LLM模型: {LLM_MODEL_NAME}")
     print(f"API地址: {LLM_API_BASE}{LLM_API_PATH}")
     
@@ -92,8 +128,9 @@ def main():
                 if not goal:
                     continue
                 
+                print("\n思考中...")
                 result = agent.run(goal)
-                print(f"\n结果: {result}")
+                print("\n" + format_result(result))
                 
             except KeyboardInterrupt:
                 print("\n\n退出...")
@@ -101,11 +138,7 @@ def main():
     elif args.goal:
         # 单次执行
         result = agent.run(args.goal)
-        print(f"\n执行结果:")
-        print(f"  目标: {result['goal']}")
-        print(f"  迭代次数: {result['iterations']}")
-        print(f"  计划状态: {result['plan_status']}")
-        print(f"  进度: {result['progress']['progress']:.1%}")
+        print("\n" + format_result(result))
     else:
         # 默认运行演示
         from examples.demo import main as demo_main
