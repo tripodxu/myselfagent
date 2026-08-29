@@ -126,11 +126,6 @@ class Agent:
             iter_time = time.time() - iter_start
             self.log(f"第{self.iteration}轮迭代完成 (耗时{iter_time:.2f}秒)", "ITER")
             
-            # 如果这一步成功了，可以提前结束
-            if result.get("success"):
-                self.log("任务成功完成，提前结束", "DONE")
-                break
-            
             # 检查是否完成
             if self.planner.is_plan_complete(plan_id):
                 self.log("所有步骤已完成", "PLAN")
@@ -177,11 +172,15 @@ class Agent:
                 desc += "\n  参数: action (text/file/files), pattern, text/target"
             tool_descriptions.append(desc)
         
-        # 构建提示词
+        # 构建提示词 - 告诉LLM如果需要多步操作，一次返回所有步骤
         prompt = f"目标: {goal}\n当前步骤: {step.description}\n\n"
         prompt += "可用工具:\n"
         prompt += "\n".join(tool_descriptions)
-        prompt += "\n\n请选择合适的工具并提供参数。只返回JSON格式，不要返回其他内容。\n"
+        prompt += "\n\n"
+        prompt += "重要提示：\n"
+        prompt += "1. 只返回JSON格式，不要返回其他内容\n"
+        prompt += "2. 如果任务需要多个步骤（如创建文件后再运行），请一次完成所有步骤\n"
+        prompt += "3. 对于需要运行代码的任务，使用python_exec工具直接执行代码\n"
         prompt += '{"tool": "工具名", "params": {"参数名": "参数值"}}'
         
         self.log(f"发送给LLM的提示词:\n{prompt}", "API_REQ")

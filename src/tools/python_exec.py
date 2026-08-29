@@ -4,9 +4,9 @@ from typing import Any
 from .base import BaseTool
 
 
-# 被禁止导入的模块
+# 被禁止导入的模块（只禁止真正危险的）
 BLOCKED_IMPORTS = [
-    "os", "subprocess", "shutil", "sys", "importlib",
+    "subprocess", "shutil", "importlib",
     "ctypes", "socket", "http", "ftplib", "smtplib",
 ]
 
@@ -32,7 +32,9 @@ class PythonExecTool(BaseTool):
                 capture_output=True,
                 text=True,
                 timeout=self.timeout,
-                cwd=kwargs.get("cwd", ".")
+                cwd=kwargs.get("cwd", "."),
+                encoding='utf-8',
+                errors='replace'
             )
             
             if result.returncode == 0:

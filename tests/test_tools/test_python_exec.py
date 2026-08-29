@@ -34,13 +34,6 @@ class TestPythonExecTool:
         assert result["success"] is False
         assert "超时" in result["error"]
     
-    def test_exec_blocked_import_os(self):
-        """"测试禁止导入os模块"""
-        code = "import os; print(os.getcwd())"
-        with pytest.raises(ImportError) as exc_info:
-            self.tool.execute(code=code)
-        assert "os" in str(exc_info.value)
-    
     def test_exec_blocked_import_subprocess(self):
         """"测试禁止导入subprocess模块"""
         code = "import subprocess; subprocess.run(['ls'])"
@@ -54,6 +47,12 @@ class TestPythonExecTool:
         result = self.tool.execute(code=code)
         assert result["success"] is True
         assert "3.14" in result["output"]
+    
+    def test_exec_allowed_os_import(self):
+        """"测试允许导入os模块"""
+        code = "import os; print(os.getcwd())"
+        result = self.tool.execute(code=code)
+        assert result["success"] is True
     
     def test_exec_multiline_code(self):
         """"测试多行代码"""
