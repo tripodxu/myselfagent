@@ -1,6 +1,5 @@
 import json
 import re
-import sys
 import time
 from typing import Any, Dict, List, Optional
 from datetime import datetime
@@ -12,6 +11,15 @@ from .planner.llm_planner import LLMPlanner
 
 def get_timestamp():
     return datetime.now().strftime("%H:%M:%S.%f")[:-3]
+
+
+# Safety: dangerous tool patterns that need extra review
+DANGEROUS_PATTERNS = [
+    "rm -rf", "rmdir /s", "del /f",
+    "format c:", "shutdown",
+    "import subprocess", "import shutil", "import socket",
+    "os.system(", "os.popen(",
+]
 
 
 def has_answer(result: dict) -> bool:
@@ -75,6 +83,65 @@ class Agent:
                 pass
         self.debug_logs.append({"timestamp": timestamp, "level": level, "message": message})
 
+    # === Safety Review Layer ===
+    def _check_safety(self, decision: dict) -> dict:
+        """Review tool call for safety before execution."""
+        tool_name = decision.get("tool", "")
+        params = decision.get("params", {})
+
+        # Check all string params for dangerous patterns
+        for key, val in params.items():
+            if isinstance(val, str):
+                for pattern in DANGEROUS_PATTERNS:
+                    if pattern.lower() in val.lower():
+                        self.log(f"Safety block: {pattern} in {key}", "SAFETY")
+                        return {"safe": False, "reason": f"Blocked: contains '{pattern}'"}
+
+        # Check if tool exists
+        if not self.tool_registry.has_tool(tool_name):
+            return {"safe": False, "reason": f"Unknown tool: {tool_name}"}
+
+        return {"safe": True, "reason": "ok"}
+
+    # === Message Builder (layered like Codex) ===
+    def _build_messages(self, goal: str, step_desc: str, prior_results: list) -> list:
+        """Build layered messages: developer -> user -> assistant history -> tool results."""
+        messages = []
+
+        # Layer 1: Developer instructions (system rules)
+        tool_defs = self.tool_registry.get_tool_definitions()
+        tools_text = json.dumps(tool_defs, ensure_ascii=False, indent=2)
+        developer_content = (
+            "You are an AI agent that selects tools to accomplish tasks.\n"
+            "Rules:\n"
+            "1. Return ONLY a JSON object with tool name and params\n"
+            "2. Use python_exec for multi-step tasks (create file + run)\n"
+            "3. If previous steps already completed the goal, do NOT call more tools\n\n"
+            f"Available tools (JSON Schema):\n{tools_text}\n\n"
+            "Output format:\n"
+            '{"tool": "tool_name", "params": {"key": "value"}}'
+        )
+        messages.append({"role": "developer", "content": developer_content})
+
+        # Layer 2: User request (goal + current step)
+        user_content = f"Goal: {goal}\nCurrent step: {step_desc}"
+        messages.append({"role": "user", "content": user_content})
+
+        # Layer 3: Previous tool results (as assistant context)
+        if prior_results:
+            history_lines = []
+            for pr in prior_results[-3:]:
+                r = pr["result"]
+                if r.get("success"):
+                    summary = r.get("output", "").strip()[:200] or r.get("message", "")[:200]
+                    history_lines.append(f"Step {pr['step']}: {pr['tool']} -> {summary}")
+                else:
+                    err_msg = r.get("error", "unknown")[:100]
+                    history_lines.append(f"Step {pr['step']}: {pr['tool']} -> FAILED: {err_msg}")
+            messages.append({"role": "assistant", "content": "Previous results:\n" + "\n".join(history_lines)})
+
+        return messages
+
     def run(self, goal: str) -> Dict[str, Any]:
         self.iteration = 0
         self.debug_logs = []
@@ -83,6 +150,11 @@ class Agent:
 
         self.log(f"Goal: {goal}", "GOAL")
         self.log(f"Max iterations: {self.max_iterations}", "CONFIG")
+
+        # Auto-adjust reasoning effort based on goal complexity
+        effort = self._estimate_complexity(goal)
+        self.llm.set_reasoning_effort(effort)
+        self.log(f"Reasoning effort: {effort}", "CONFIG")
 
         # Phase 1: LLM decomposes goal into plan
         self.log("Creating plan with LLM...", "PLAN")
@@ -101,28 +173,37 @@ class Agent:
             self.iteration += 1
             iter_start = time.time()
 
-            # Get next step from plan
             next_step = self.planner.get_next_step(plan_id)
             if not next_step:
-                self.log("No more steps in plan", "PLAN")
+                self.log("No more steps", "PLAN")
                 break
 
-            self.log(f"Iteration {self.iteration}: Step {next_step.id} - {next_step.description}", "ITER")
+            self.log(f"Iter {self.iteration}: Step {next_step.id} - {next_step.description}", "ITER")
 
-            # Decide: choose tool based on goal + current step + prior results
+            # Decide
             self.log("Deciding...", "DECIDE")
             decision_start = time.time()
             decision = self._make_decision(next_step.description, goal, step_results)
             decision_time = time.time() - decision_start
-            self.log(f"Decision made in {decision_time:.2f}s", "DECIDE")
+            self.log(f"Decision: {decision_time:.2f}s", "DECIDE")
             self.log(f"Tool: {decision.get('tool')}", "TOOL")
 
-            # Execute tool
+            # Safety review
+            safety = self._check_safety(decision)
+            self.log(f"Safety: {safety['reason']}", "SAFETY")
+            if not safety["safe"]:
+                result = {"success": False, "error": safety["reason"]}
+                step_results.append({"step": self.iteration, "description": next_step.description,
+                                     "tool": decision.get("tool"), "result": result})
+                self.planner.mark_step_failed(plan_id, next_step.id, safety["reason"])
+                continue
+
+            # Execute
             self.log("Executing...", "EXEC")
             exec_start = time.time()
             result = self._execute_decision(decision)
             exec_time = time.time() - exec_start
-            self.log(f"Executed in {exec_time:.2f}s", "EXEC")
+            self.log(f"Executed: {exec_time:.2f}s", "EXEC")
 
             try:
                 result_str = json.dumps(result, ensure_ascii=False)[:300]
@@ -130,162 +211,119 @@ class Agent:
                 result_str = str(result)[:300]
             self.log(f"Result: {result_str}", "RESULT")
 
-            step_results.append({
-                "step": self.iteration,
-                "description": next_step.description,
-                "tool": decision.get("tool"),
-                "result": result,
-                "decision_time": decision_time,
-                "exec_time": exec_time
-            })
+            step_results.append({"step": self.iteration, "description": next_step.description,
+                                 "tool": decision.get("tool"), "result": result,
+                                 "decision_time": decision_time, "exec_time": exec_time})
 
             if self.memory:
                 self.memory.add_message("assistant", f"Step {self.iteration}: {result_str}")
 
-            # Mark step completed in planner
             if result.get("success", False):
                 self.planner.mark_step_completed(plan_id, next_step.id, result)
             else:
                 self.planner.mark_step_failed(plan_id, next_step.id, result.get("error"))
 
             iter_time = time.time() - iter_start
-            self.log(f"Iteration {self.iteration} done in {iter_time:.2f}s", "ITER")
+            self.log(f"Iter {self.iteration} done: {iter_time:.2f}s", "ITER")
 
-            # Early exit: if we have a concrete answer, stop
             if has_answer(result):
-                self.log("Answer detected, stopping", "DONE")
+                self.log("Answer found, stopping", "DONE")
                 break
 
-            # Phase 3: Evaluate result with LLM - should we continue/stop/replan?
-            self.log("Evaluating result with LLM...", "EVAL")
-            evaluation = self.planner.evaluate_result(
-                plan_id,
-                step_id=next_step.id,
-                result=result,
-                goal=goal
-            )
+            # Evaluate
+            self.log("Evaluating...", "EVAL")
+            evaluation = self.planner.evaluate_result(plan_id, next_step.id, result, goal)
             action = evaluation.get("action", "continue")
             reason = evaluation.get("reason", "")
-            self.log(f"Evaluation: {action} - {reason}", "EVAL")
+            self.log(f"Eval: {action} - {reason}", "EVAL")
 
             if action == "stop":
-                self.log("LLM says goal achieved, stopping", "DONE")
+                self.log("LLM says stop", "DONE")
                 break
             elif action == "replan":
                 new_steps = evaluation.get("new_steps", [])
                 if new_steps:
-                    self.log(f"Replanning with {len(new_steps)} new steps", "PLAN")
+                    self.log(f"Replanning: {len(new_steps)} steps", "PLAN")
                     self.planner.replan(plan_id, new_steps)
-                    for i, s in enumerate(new_steps):
-                        self.log(f"  New step: {s}", "PLAN")
-                else:
-                    self.log("Replan requested but no new steps, stopping", "DONE")
-                    break
 
-        # Select best result
         final_result = select_best_result(step_results)
         total_time = time.time() - start_time
-        self.log(f"Done in {total_time:.2f}s, {self.iteration} iterations", "DONE")
+        self.log(f"Done: {total_time:.2f}s, {self.iteration} iters", "DONE")
 
         self.planner.mark_plan_completed(plan_id)
         progress = self.planner.get_plan_progress(plan_id)
 
-        return {
-            "goal": goal,
-            "iterations": self.iteration,
-            "plan_status": "completed",
-            "final_result": final_result,
-            "step_results": step_results,
-            "total_time": total_time,
-            "progress": progress
-        }
+        return {"goal": goal, "iterations": self.iteration, "plan_status": "completed",
+                "final_result": final_result, "step_results": step_results,
+                "total_time": total_time, "progress": progress}
 
     def _make_decision(self, step_desc: str, goal: str, prior_results: list = None) -> Dict[str, Any]:
+        messages = self._build_messages(goal, step_desc, prior_results or [])
+        prompt = "\n\n".join(f"[{m['role'].upper()}]\n{m['content']}" for m in messages)
+
+        # Log each layer separately for debugging
+        for m in messages:
+            self.log(f"[{m['role'].upper()}] {m['content'][:300]}", "MSG")
+
+        self.log(f"Full prompt sent to LLM", "API_REQ")
+
         tools = self.tool_registry.list_tools()
         tool_names = [t.name for t in tools]
 
-        tool_descriptions = []
-        for tool in tools:
-            desc = f"- {tool.name}: {tool.description}"
-            if tool.name == "datetime":
-                desc += "\n  params: action (now/date/time/weekday/tomorrow/yesterday/+N/-N)"
-            elif tool.name == "python_exec":
-                desc += "\n  params: code (Python code string)"
-            elif tool.name == "file_io":
-                desc += "\n  params: action (read/write/list), path, content"
-            elif tool.name == "search":
-                desc += "\n  params: action (text/file/files), pattern, text/target"
-            tool_descriptions.append(desc)
-
-        prompt = f"Goal: {goal}\n"
-        prompt += f"Current step: {step_desc}\n\n"
-
-        if prior_results:
-            prompt += "Previous results:\n"
-            for pr in prior_results[-3:]:
-                r = pr["result"]
-                if r.get("success"):
-                    summary = r.get("output", "").strip()[:200] or r.get("message", "")[:200] or json.dumps(r, ensure_ascii=False)[:200]
-                    prompt += f"- Step {pr['step']}: {pr['tool']} -> {summary}\n"
-                else:
-                    prompt += f"- Step {pr['step']}: {pr['tool']} -> FAILED: {r.get('error', 'unknown')[:100]}\n"
-            prompt += "\n"
-
-        prompt += "Available tools:\n"
-        prompt += "\n".join(tool_descriptions)
-        prompt += "\n\n"
-        prompt += "Rules:\n"
-        prompt += "1. Return ONLY one JSON object\n"
-        prompt += "2. Use python_exec for multi-step tasks (create file + run)\n"
-        prompt += 'Return format: {"tool": "tool_name", "params": {"key": "value"}}'
-
-        self.log(f"LLM prompt:\n{prompt}", "API_REQ")
-
         try:
             response = self.llm._call(prompt)
-            self.log(f"LLM response:\n{response}", "API_RES")
+            self.log(f"LLM response: {response[:300]}", "API_RES")
             decision = self._parse_json(response)
             if decision:
                 return decision
             raise json.JSONDecodeError("No valid JSON", response, 0)
         except Exception as e:
             self.log(f"Decision failed: {e}", "ERROR")
-            return {
-                "tool": tool_names[0] if tool_names else "python_exec",
-                "params": {"code": f"print('step done: {step_desc}')"}
-            }
+            return {"tool": tool_names[0] if tool_names else "python_exec",
+                    "params": {"code": f"print('step done: {step_desc}')"}}
+
+    def _estimate_complexity(self, goal: str) -> str:
+        """Estimate task complexity for reasoning effort control."""
+        simple_keywords = ["date", "time", "weekday", "today", "tomorrow", "yesterday"]
+        complex_keywords = ["create", "build", "implement", "design", "analyze", "debug", "refactor"]
+
+        goal_lower = goal.lower()
+        if any(kw in goal_lower for kw in simple_keywords):
+            return "low"
+        if any(kw in goal_lower for kw in complex_keywords):
+            return "high"
+        return "medium"
 
     def _parse_json(self, text: str) -> Optional[Dict[str, Any]]:
         try:
             return json.loads(text)
         except json.JSONDecodeError:
             pass
-        json_start = text.find('{')
-        json_end = text.rfind('}') + 1
+        json_start = text.find("{")
+        json_end = text.rfind("}") + 1
         if json_start >= 0 and json_end > json_start:
             json_str = text[json_start:json_end]
             try:
                 return json.loads(json_str)
             except json.JSONDecodeError:
                 pass
-            fixed = json_str.replace('\\n', '\n').replace('\\t', '\t')
+            fixed = json_str.replace("\\n", "\n").replace("\\t", "\t")
             try:
                 return json.loads(fixed)
             except json.JSONDecodeError:
                 pass
-            tool_match = re.search(r'"tool"\s*:\s*"([^"]+)"', json_str)
+            tool_match = re.search(r"\"tool\"\s*:\s*\"([^\"]+)\"", json_str)
             if tool_match:
                 tool_name = tool_match.group(1)
                 params = {}
                 for key in ["action", "path"]:
-                    key_match = re.search(rf'"{key}"\s*:\s*"([^"]+)"', json_str)
-                    if key_match:
-                        params[key] = key_match.group(1)
+                    km = re.search(rf"\"{key}\"\s*:\s*\"([^\"]+)\"", json_str)
+                    if km:
+                        params[key] = km.group(1)
                 for key in ["content", "code"]:
-                    key_match = re.search(rf'"{key}"\s*:\s*"((?:[^"\\]|\\.)*)"', json_str, re.DOTALL)
-                    if key_match:
-                        val = key_match.group(1)
-                        val = val.replace('\\n', '\n').replace('\\t', '\t').replace('\\"', '"').replace('\\\\', '\\')
+                    km = re.search(rf"\"{key}\"\s*:\s*\"((?:[^\"\\]|\\.)*)\"", json_str, re.DOTALL)
+                    if km:
+                        val = km.group(1).replace("\\n", "\n").replace("\\t", "\t").replace('\\"', '"').replace("\\\\", "\\")
                         params[key] = val
                 return {"tool": tool_name, "params": params}
         return None

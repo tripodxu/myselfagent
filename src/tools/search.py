@@ -5,107 +5,58 @@ from .base import BaseTool
 
 
 class SearchTool(BaseTool):
-    """"搜索工具"""
-    
     def __init__(self):
-        super().__init__(
-            name="search",
-            description="在文本或文件中搜索内容"
-        )
-    
-    def execute(self, action: str, pattern: str, target: str = None, text: str = None, **kwargs) -> Any:
-        """"执行搜索"""
+        super().__init__(name="search", description="Search content in text or files")
+
+    def parameters_schema(self) -> Dict[str, Any]:
+        return {"type": "object", "properties": {
+            "action": {"type": "string", "enum": ["text", "file", "files"]},
+            "pattern": {"type": "string"},
+            "text": {"type": "string"},
+            "target": {"type": "string"}
+        }, "required": ["action", "pattern"]}
+
+    def execute(self, action: str = "", pattern: str = "", target: str = None, text: str = None, **kwargs) -> Any:
         if action == "text":
-            if text is None:
-                return {"success": False, "error": "文本搜索需要text参数"}
-            return self.search_in_text(pattern, text)
+            if text is None: return {"success": False, "error": "\u6587\u672c\u641c\u7d22\u9700\u8981text\u53c2\u6570"}
+            return self._search_text(pattern, text)
         elif action == "file":
-            if target is None:
-                return {"success": False, "error": "文件搜索需要target参数"}
-            return self.search_in_file(pattern, target)
+            if not target: return {"success": False, "error": "\u6587\u4ef6\u641c\u7d22\u9700\u8981target\u53c2\u6570"}
+            return self._search_file(pattern, target)
         elif action == "files":
-            if target is None:
-                return {"success": False, "error": "多文件搜索需要target参数"}
-            return self.search_in_files(pattern, target, **kwargs)
-        else:
-            return {"success": False, "error": f"未知搜索操作: {action}"}
-    
-    def search_in_text(self, pattern: str, text: str) -> dict:
-        """"在文本中搜索"""
+            if not target: return {"success": False, "error": "\u591a\u6587\u4ef6\u641c\u7d22\u9700\u8981target\u53c2\u6570"}
+            return self._search_files(pattern, target, **kwargs)
+        return {"success": False, "error": "\u672a\u77e5\u641c\u7d22\u64cd\u4f5c: " + action}
+
+    def _search_text(self, pattern: str, text: str) -> dict:
         try:
-            matches = []
-            for i, line in enumerate(text.split("\n"), 1):
-                if re.search(pattern, line, re.IGNORECASE):
-                    matches.append({
-                        "line_number": i,
-                        "content": line.strip()
-                    })
-            
-            return {
-                "success": True,
-                "matches": matches,
-                "total": len(matches)
-            }
+            matches = [{"line_number": i, "content": l.strip()} for i, l in enumerate(text.split("\n"), 1) if re.search(pattern, l, re.IGNORECASE)]
+            return {"success": True, "matches": matches, "total": len(matches)}
         except re.error as e:
-            return {"success": False, "error": f"正则表达式错误: {e}"}
+            return {"success": False, "error": "\u6b63\u5219\u8868\u8fbe\u5f0f\u9519\u8bef: " + str(e)}
+
+    def _search_file(self, pattern: str, filepath: str) -> dict:
+        try:
+            p = Path(filepath)
+            if not p.exists(): return {"success": False, "error": "\u6587\u4ef6\u4e0d\u5b58\u5728: " + filepath}
+            return self._search_text(pattern, p.read_text(encoding="utf-8"))
         except Exception as e:
             return {"success": False, "error": str(e)}
-    
-    def search_in_file(self, pattern: str, filepath: str) -> dict:
-        """"在文件中搜索"""
+
+    def _search_files(self, pattern: str, directory: str, **kwargs) -> dict:
         try:
-            file_path = Path(filepath)
-            
-            if not file_path.exists():
-                return {"success": False, "error": f"文件不存在: {filepath}"}
-            
-            if not file_path.is_file():
-                return {"success": False, "error": f"不是文件: {filepath}"}
-            
-            content = file_path.read_text(encoding="utf-8")
-            return self.search_in_text(pattern, content)
-            
-        except PermissionError:
-            return {"success": False, "error": f"没有权限读取: {filepath}"}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-    
-    def search_in_files(self, pattern: str, directory: str, extensions: List[str] = None, **kwargs) -> dict:
-        """"在多个文件中搜索"""
-        try:
-            dir_path = Path(directory)
-            
-            if not dir_path.exists():
-                return {"success": False, "error": f"目录不存在: {directory}"}
-            
-            if not dir_path.is_dir():
-                return {"success": False, "error": f"不是目录: {directory}"}
-            
+            d = Path(directory)
+            if not d.exists(): return {"success": False, "error": "\u76ee\u5f55\u4e0d\u5b58\u5728: " + directory}
+            extensions = kwargs.get("extensions")
             all_matches = []
-            
-            for file_path in dir_path.rglob("*"):
-                if not file_path.is_file():
-                    continue
-                
-                if extensions:
-                    if file_path.suffix not in extensions:
-                        continue
-                
+            for f in d.rglob("*"):
+                if not f.is_file(): continue
+                if extensions and f.suffix not in extensions: continue
                 try:
-                    result = self.search_in_file(pattern, str(file_path))
-                    if result["success"] and result["total"] > 0:
-                        all_matches.append({
-                            "file": str(file_path),
-                            "matches": result["matches"]
-                        })
-                except Exception:
-                    continue
-            
-            return {
-                "success": True,
-                "files": all_matches,
-                "total_files": len(all_matches)
-            }
-            
+                    r = self._search_file(pattern, str(f))
+                    if r.get("success") and r.get("total", 0) > 0:
+                        all_matches.append({"file": str(f), "matches": r["matches"]})
+                except Exception: continue
+            return {"success": True, "files": all_matches, "total_files": len(all_matches)}
         except Exception as e:
             return {"success": False, "error": str(e)}
