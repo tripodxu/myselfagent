@@ -236,6 +236,9 @@ class Agent:
             exec_time = time.time() - exec_start
             self.log("Executed: " + f"{exec_time:.2f}" + "s", "EXEC")
 
+            # Verify output is actual implementation
+            result = self._verify_output(decision, result, goal)
+
             try:
                 result_str = json.dumps(result, ensure_ascii=False)[:300]
             except (TypeError, ValueError):
@@ -367,6 +370,40 @@ class Agent:
                         params[key] = val
                 return {"tool": tool_name, "params": params}
         return None
+
+    def _verify_output(self, decision: dict, result: dict, goal: str) -> dict:
+        """Verify that tool output is actual implementation, not plan text."""
+        if not result.get("success"):
+            return result
+
+        tool_name = decision.get("tool", "")
+        params = decision.get("params", {})
+
+        # Only verify file_io write operations
+        if tool_name != "file_io" or params.get("action") != "write":
+            return result
+
+        filepath = params.get("path", "")
+        if not filepath:
+            return result
+
+        # Read back the file to verify
+        read_result = self._execute_decision({"tool": "file_io", "params": {"action": "read", "path": filepath}})
+        if not read_result.get("success"):
+            return result
+
+        content = read_result.get("content", "")
+
+        # Check if content looks like plan text instead of actual code
+        plan_markers = ["---", "## ", "### ", "> 可根据", "> **注意**"]
+        plan_count = sum(1 for marker in plan_markers if marker in content)
+
+        if plan_count >= 3 and len(content) > 500:
+            self.log("Output verification: file contains plan text, not actual code", "VERIFY")
+            return {"success": False, "error": "OUTPUT_IS_PLAN_TEXT: File contains plan/description text instead of actual implementation. Write REAL code.", "content": content}
+
+        self.log("Output verification: OK (" + str(len(content)) + " chars)", "VERIFY")
+        return result
 
     def _execute_decision(self, decision: Dict[str, Any]) -> Dict[str, Any]:
         tool_name = decision.get("tool")
