@@ -107,16 +107,23 @@ class Agent:
         tool_defs = self.tool_registry.get_tool_definitions()
         tools_text = json.dumps(tool_defs, ensure_ascii=False, indent=2)
         developer_content = (
-            "You are an AI agent that executes tasks using tools.\n"
-            "Rules:\n"
-            "1. Return ONLY a JSON object with tool name and params\n"
-            "2. Use python_exec to write COMPLETE, WORKING code (not pseudocode or plan text)\n"
-            "3. Combine ALL related operations into ONE python_exec call\n"
-            "4. When creating a file, write the FULL implementation, not a placeholder or summary\n"
-            "5. If previous steps already completed the goal, do NOT call more tools\n\n"
-            "Available tools (JSON Schema):\n" + tools_text + "\n\n"
+            "You are an AI agent that EXECUTES tasks by WRITING CODE.\n"
+            "CRITICAL RULES:\n"
+            "1. Return ONLY a JSON object: {\"tool\": \"tool_name\", \"params\": {\"key\": \"value\"}}\n"
+            "2. Use python_exec to write and save COMPLETE, RUNNABLE code files\n"
+            "3. NEVER output plan text, markdown, or descriptions as file content\n"
+            "4. NEVER convert a plan document into HTML - IMPLEMENT the plan instead\n"
+            "5. When the goal says 'create an HTML page', write ACTUAL HTML with real sections,\n"
+            "   real CSS styling, real JavaScript - not a text description of what to build\n"
+            "6. Combine ALL related operations into ONE python_exec call\n\n"
+            "WRONG (do NOT do this):\n"
+            "  Write a file that contains the plan text converted to HTML <li> tags\n\n"
+            "RIGHT (do this instead):\n"
+            "  Write a file that contains actual HTML sections like <nav>, <section>, <footer>\n"
+            "  with real CSS styles and JavaScript interactivity\n\n"
+            "Available tools:\n" + tools_text + "\n\n"
             "Output format:\n"
-            '{"tool": "tool_name", "params": {"key": "value"}}'
+            '{\"tool\": \"tool_name\", \"params\": {\"key\": \"value\"}}'
         )
         messages.append({"role": "developer", "content": developer_content})
         user_content = "Goal: " + goal + "\nCurrent step: " + step_desc

@@ -178,10 +178,11 @@ class LLMPlanner:
             f"Completed step: {step_desc}\n"
             f"Step result: {result_summary}\n"
             f"Remaining steps: {remaining_text}\n\n"
-            f"Critically evaluate: does the ACTUAL OUTPUT (not the plan) fully satisfy the original goal?\n"
-            f"- If the output is a plan/description instead of actual implementation, say CONTINUE or REPLAN\n"
-            f"- If the output is incomplete or a placeholder, say CONTINUE or REPLAN\n"
-            f"- Only say STOP if the goal is truly achieved with working, complete output\n\n"
+            f"CRITICAL EVALUATION - read the output carefully:\n"
+            f"- If output contains plan text, markdown, descriptions, or '---' separators: REPLAN with new_steps\n"
+            f"- If output is actual working code (HTML tags, Python functions, etc.): evaluate normally\n"
+            f"- If output is a placeholder or summary: CONTINUE or REPLAN\n"
+            f"- Only say STOP if the goal is truly achieved with COMPLETE, WORKING output\n\n"
             f"Return ONLY a JSON object:\n"
             f'- {{"action": "continue", "reason": "why continue"}} - if goal not yet fully achieved\n'
             f'- {{"action": "stop", "reason": "why stop"}} - if goal is FULLY achieved with correct output\n'
