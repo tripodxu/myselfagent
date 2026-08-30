@@ -107,12 +107,13 @@ class Agent:
         tool_defs = self.tool_registry.get_tool_definitions()
         tools_text = json.dumps(tool_defs, ensure_ascii=False, indent=2)
         developer_content = (
-            "You are an AI agent that selects tools to accomplish tasks.\n"
+            "You are an AI agent that executes tasks using tools.\n"
             "Rules:\n"
             "1. Return ONLY a JSON object with tool name and params\n"
-            "2. Use python_exec for multi-step tasks (create file + run)\n"
-            "3. Combine related operations into ONE python_exec call when possible\n"
-            "4. If previous steps already completed the goal, do NOT call more tools\n\n"
+            "2. Use python_exec to write COMPLETE, WORKING code (not pseudocode or plan text)\n"
+            "3. Combine ALL related operations into ONE python_exec call\n"
+            "4. When creating a file, write the FULL implementation, not a placeholder or summary\n"
+            "5. If previous steps already completed the goal, do NOT call more tools\n\n"
             "Available tools (JSON Schema):\n" + tools_text + "\n\n"
             "Output format:\n"
             '{"tool": "tool_name", "params": {"key": "value"}}'
@@ -143,6 +144,7 @@ class Agent:
         self.debug_logs = []
         step_results = []
         start_time = time.time()
+        last_eval_action = "continue"
 
         self.log("Goal: " + goal, "GOAL")
         max_iter_str = str(self.max_iterations)
@@ -172,6 +174,28 @@ class Agent:
 
             next_step = self.planner.get_next_step(plan_id)
             if not next_step:
+                # No more steps but LLM says goal not achieved -> replan
+                if last_eval_action == "continue":
+                    self.log("No more steps but goal not achieved, requesting replan...", "PLAN")
+                    replan_prompt = (
+                        "Goal: " + goal + "\n"
+                        "All planned steps completed but goal is NOT fully achieved.\n"
+                        "What additional steps are needed?\n"
+                        "Return ONLY a JSON object: {\"steps\": [\"step1\", \"step2\"]}"
+                    )
+                    try:
+                        replan_response = self.llm._call(replan_prompt)
+                        replan_parsed = self.planner._parse_json(replan_response)
+                        if replan_parsed and "steps" in replan_parsed:
+                            new_steps = replan_parsed["steps"]
+                            self.log("Replan: " + str(len(new_steps)) + " new steps", "PLAN")
+                            for ns in new_steps:
+                                self.log("  + " + ns, "PLAN")
+                            self.planner.replan(plan_id, new_steps)
+                            last_eval_action = "continue"
+                            continue
+                    except Exception as e:
+                        self.log("Replan failed: " + str(e), "ERROR")
                 self.log("No more steps in plan", "PLAN")
                 break
 
@@ -227,11 +251,11 @@ class Agent:
             self.log("Iter " + str(self.iteration) + " done: " + f"{iter_time:.2f}" + "s", "ITER")
 
             # Evaluate: LLM decides continue/stop/replan
-            # Do NOT use has_answer() for early termination
             self.log("Evaluating...", "EVAL")
             evaluation = self.planner.evaluate_result(plan_id, next_step.id, result, goal)
             action = evaluation.get("action", "continue")
             reason = evaluation.get("reason", "")
+            last_eval_action = action
             self.log("Eval: " + action + " - " + reason, "EVAL")
 
             if action == "stop":
