@@ -17,7 +17,7 @@ def get_timestamp():
 DANGEROUS_PATTERNS = [
     "rm -rf", "rmdir /s", "del /f",
     "format c:", "shutdown",
-    "import subprocess", "import shutil", "import socket",
+    "import subprocess", "import socket",
     "os.system(", "os.popen(",
 ]
 
@@ -141,19 +141,11 @@ class Agent:
             "2. Write COMPLETE, RUNNABLE code - NOT placeholders\n"
             "3. For HTML projects: use python_exec to write the file\n"
             "4. NEVER output plan text or descriptions as file content\n"
-            "5. Implement ALL features from requirements, including:\n"
-            "   - Typing effect for hero section\n"
-            "   - Particle background using Canvas API\n"
-            "   - Dashboard stats with counter animation\n"
-            "   - 3D flip cards with CSS transform\n"
-            "   - Radar chart using Canvas API\n"
-            "   - Project filtering with data attributes\n"
-            "   - Blog section with cards\n"
-            "   - Testimonials carousel with auto-play\n"
-            "   - Multi-step form with validation\n"
-            "   - File upload with drag & drop\n"
-            "   - Dark mode toggle with localStorage\n"
-            "   - Back to top button\n"
+            "5. Implement ALL features from requirements faithfully\n"
+            "   - Read requirements doc completely before coding\n"
+            "   - Each requirement item must appear in output\n"
+            "   - For HTML: include navigation, hero, content sections, footer\n"
+            "   - Add interactive features (animations, transitions, effects)\n"
             "6. Combine ALL operations into ONE python_exec call\n\n"
             "Available tools:\n" + tools_text + "\n\n"
             "Output format:\n"
