@@ -1,0 +1,24 @@
+[
+  {
+    "name": "Simple: Get date",
+    "old": {
+      "json": true,
+      "plan": false
+    },
+    "new": {
+      "json": true,
+      "plan": false
+    }
+  },
+  {
+    "name": "Medium: Create HTML",
+    "old": {
+      "json": true,
+      "plan": false
+    },
+    "new": {
+      "json": false,
+      "plan": false
+    }
+  }
+]

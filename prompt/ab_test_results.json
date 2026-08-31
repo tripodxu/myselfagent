@@ -1,0 +1,32 @@
+[
+  {
+    "task": "Task 1: Simple - Get date",
+    "complexity": "simple",
+    "old": {"valid_json": true, "correct_tool": true, "plan_text": false, "response_time": 6.2},
+    "new": {"valid_json": true, "correct_tool": true, "plan_text": false, "response_time": 6.2}
+  },
+  {
+    "task": "Task 2: Medium - Read file",
+    "complexity": "medium",
+    "old": {"valid_json": true, "correct_tool": true, "plan_text": false, "response_time": 6.5},
+    "new": {"valid_json": true, "correct_tool": true, "plan_text": false, "response_time": 6.8}
+  },
+  {
+    "task": "Task 3: Medium - Create HTML",
+    "complexity": "medium",
+    "old": {"valid_json": true, "correct_tool": true, "plan_text": false, "code_chars": 1200, "response_time": 7.1},
+    "new": {"valid_json": true, "correct_tool": true, "plan_text": false, "code_chars": 3932, "response_time": 19.6}
+  },
+  {
+    "task": "Task 4: Complex - Multi-file",
+    "complexity": "complex",
+    "old": {"valid_json": true, "correct_tool": true, "plan_text_possible": true, "merged_ops": false},
+    "new": {"valid_json": true, "correct_tool": true, "plan_text_possible": false, "merged_ops": true}
+  },
+  {
+    "task": "Task 5: Complex - Error recovery",
+    "complexity": "complex",
+    "old": {"valid_json": true, "error_handling": "none"},
+    "new": {"valid_json": true, "error_handling": "retry_strategy"}
+  }
+]
