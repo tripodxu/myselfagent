@@ -1,7 +1,7 @@
 # Python
 __pycache__/
 *.py[cod]
-*.class
+*$py.class
 *.so
 .Python
 venv/
@@ -16,23 +16,30 @@ build/
 *.swp
 *.swo
 
-# Environment
-.env
-.env.local
-
-# Memory files
-memory.json
-*.log
-
-# Test
-.pytest_cache/
-htmlcov/
-.coverage
-coverage.xml
-
 # OS
 .DS_Store
 Thumbs.db
 
-# Project specific
-workspace/
+# Logs
+logs/
+*.log
+
+# Test results
+result_*.txt
+test_log.txt
+
+# Memory
+memory.json
+
+# Environment
+.env
+.env.local
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Backup files
+*.bak
+*.backup
