@@ -136,24 +136,27 @@ class LLMPlanner:
             "completed": completed,
             "remaining": total - completed,
             "progress": completed / total if total > 0 else 0,
-            "status": plan.status,
-            "current_step": self.get_next_step(plan_id)
+            "status": plan.status
         }
 
     def _decompose_with_llm(self, goal: str) -> List[str]:
         if not self.llm:
             return [goal]
         prompt = (
-            f"Decompose this goal into concrete, actionable steps.\n"
+            "Decompose task into atomic executable steps.\n\n"
+            "For complex HTML/CSS/JS tasks, break into phases:\n"
+            "Phase 1: Read requirements and plan structure\n"
+            "Phase 2: Generate base HTML with navigation and hero\n"
+            "Phase 3: Add content sections (about, skills, projects)\n"
+            "Phase 4: Add interactive features (forms, modals, animations)\n"
+            "Phase 5: Add final polish (dark mode, responsive, footer)\n\n"
+            "Principles: specific, executable (one tool call per step), logical order.\n\n"
+            "Complexity: simple->1 step, medium->2-3 steps, complex->group into phases.\n\n"
+            "Output JSON only:\n"
+            '{"complexity":"simple|medium|complex","steps":["step1","step2"]}\n\n'
+            "Token Budget: output <= 500 tokens. Steps concise.\n\n"
             f"Goal: {goal}\n\n"
-            f"Return ONLY a JSON object: {{\"steps\": [\"step1\", \"step2\", ...]}}\n"
-            f"Rules:\n"
-            f"- Maximum 5 steps, prefer 2-3 steps\n"
-            f"- Each step should combine related actions into ONE unit\n"
-            f"- Each step should be executable in a single tool call\n"
-            f"- Do NOT include review/confirm/evaluate steps\n"
-            f"- Steps should be ordered logically\n"
-            f"- Do NOT include any text outside the JSON"
+            "Rules: max 5 steps, prefer 2-3. No review steps. JSON only."
         )
         try:
             response = self.llm._call(prompt)
@@ -174,19 +177,46 @@ class LLMPlanner:
             result_summary = f"Failed: {result.get('error', 'unknown error')[:200]}"
         remaining_text = ", ".join(remaining[:5]) if remaining else "none"
         return (
+            "Evaluate step result and decide next action.\n\n"
+            "## Dimensions (by priority)\n"
+            "1. Correctness: result achieves step goal?\n"
+            "2. Completeness: all required info present?\n"
+            "3. Implementation: real code/data, not plan text/placeholders?\n\n"
+            "## Decision Matrix\n"
+            "| Status | Action |\n"
+            "|--------|--------|\n"
+            "| Correct+Complete+Real | continue |\n"
+            "| Correct but incomplete | continue |\n"
+            "| Plan text/output | replan |\n"
+            "| Execution error | continue (adjust) |\n"
+            "| Off-target | replan |\n"
+            "| All steps done | stop |\n\n"
+            "## Verification Step\n"
+            "- After generating HTML, verify it contains all required features\n"
+            "- Check for: navigation, hero, typing effect, particles, about, skills, projects, contact, footer, dark mode, back to top\n"
+            "- If features are missing, replan to add them\n\n"
+            "## Key Rules\n"
+            "- File read success (file_io returns content) -> continue\n"
+            "- Goal from doc: check ALL modules/functions included, missing any = not complete\n"
+            "- Output with non-JSON (explanation, code blocks, markdown) -> replan\n"
+            "- Placeholder text (Content for XXX, TODO, 待填充) -> replan\n"
+            "- Real runnable code/data -> evaluate if meets goal\n\n"
+            "## Progress\n"
             f"Goal: {goal}\n"
-            f"Completed step: {step_desc}\n"
-            f"Step result: {result_summary}\n"
-            f"Remaining steps: {remaining_text}\n\n"
-            f"CRITICAL EVALUATION - read the output carefully:\n"
-            f"- If output contains plan text, markdown, descriptions, or '---' separators: REPLAN with new_steps\n"
-            f"- If output is actual working code (HTML tags, Python functions, etc.): evaluate normally\n"
-            f"- If output is a placeholder or summary: CONTINUE or REPLAN\n"
-            f"- Only say STOP if the goal is truly achieved with COMPLETE, WORKING output\n\n"
-            f"Return ONLY a JSON object:\n"
-            f'- {{"action": "continue", "reason": "why continue"}} - if goal not yet fully achieved\n'
-            f'- {{"action": "stop", "reason": "why stop"}} - if goal is FULLY achieved with correct output\n'
-            f'- {{"action": "replan", "reason": "why replan", "new_steps": ["step1", "step2"]}} - if plan needs adjustment'
+            f"Completed: {step_desc}\n"
+            f"Result: {result_summary}\n"
+            f"Remaining: {remaining_text}\n\n"
+            "## Token Budget\n"
+            "Output <= 500 tokens. Reason concise, 1-2 sentences max.\n\n"
+            "Output JSON:\n"
+            '{"action":"continue|stop|replan","reason":"why","new_steps":["only for replan"]}\n\n'
+            "Examples:\n"
+            "Step: created complete HTML with CSS/JS\n"
+            '-> {"action":"continue","reason":"step done"}\n\n'
+            "Step: output plan text not code\n"
+            '-> {"action":"replan","reason":"output is description not implementation","new_steps":["write real HTML code"]}\n\n'
+            "Step: all pages created\n"
+            '-> {"action":"stop","reason":"goal achieved"}'
         )
 
     def _parse_json(self, text: str) -> Optional[Dict[str, Any]]:
@@ -220,3 +250,6 @@ class LLMPlanner:
             plan.completed_at = datetime.now().isoformat()
         elif any_failed:
             plan.status = "failed"
+
+
+

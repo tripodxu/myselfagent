@@ -87,6 +87,34 @@ class Agent:
                 pass
         self.debug_logs.append({"timestamp": timestamp, "level": level, "message": message})
 
+    def export_logs(self, filepath: str = None) -> str:
+        """Export complete debug logs to a txt file."""
+        import os
+        from datetime import datetime
+
+        if filepath is None:
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            filepath = os.path.join(log_dir, f"agent_log_{ts}.txt")
+
+        os.makedirs(os.path.dirname(os.path.abspath(filepath)), exist_ok=True)
+
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write("=" * 60 + "\\n")
+            f.write("MySelfAgent - Complete Execution Log\\n")
+            f.write("=" * 60 + "\\n\\n")
+
+            for entry in self.debug_logs:
+                line = "[" + entry["timestamp"] + "] [" + entry["level"] + "] " + entry["message"]
+                f.write(line + "\\n")
+
+            f.write("\\n" + "=" * 60 + "\\n")
+            f.write(f"Total entries: {len(self.debug_logs)}\\n")
+            f.write("=" * 60 + "\\n")
+
+        return filepath
+
     def _check_safety(self, decision: dict) -> dict:
         """Review tool call for safety before execution."""
         tool_name = decision.get("tool", "")
@@ -107,23 +135,30 @@ class Agent:
         tool_defs = self.tool_registry.get_tool_definitions()
         tools_text = json.dumps(tool_defs, ensure_ascii=False, indent=2)
         developer_content = (
-            "You are an AI agent that EXECUTES tasks by WRITING CODE.\n"
+            "You are an AI agent that EXECUTES tasks by WRITING REAL CODE.\n"
             "CRITICAL RULES:\n"
-            "1. Return ONLY a JSON object: {\"tool\": \"tool_name\", \"params\": {\"key\": \"value\"}}\n"
-            "2. Use python_exec to write and save COMPLETE, RUNNABLE code files\n"
-            "3. NEVER output plan text, markdown, or descriptions as file content\n"
-            "4. NEVER convert a plan document into HTML - IMPLEMENT the plan instead\n"
-            "5. When the goal says 'create an HTML page', write ACTUAL HTML with real sections,\n"
-            "   real CSS styling, real JavaScript - not a text description of what to build\n"
-            "6. Combine ALL related operations into ONE python_exec call\n\n"
-            "WRONG (do NOT do this):\n"
-            "  Write a file that contains the plan text converted to HTML <li> tags\n\n"
-            "RIGHT (do this instead):\n"
-            "  Write a file that contains actual HTML sections like <nav>, <section>, <footer>\n"
-            "  with real CSS styles and JavaScript interactivity\n\n"
+            "1. Return ONLY JSON: {\"tool\": \"tool_name\", \"params\": {\"key\": \"value\"}}\n"
+            "2. Write COMPLETE, RUNNABLE code - NOT placeholders\n"
+            "3. For HTML projects: use python_exec to write the file\n"
+            "4. NEVER output plan text or descriptions as file content\n"
+            "5. Implement ALL features from requirements, including:\n"
+            "   - Typing effect for hero section\n"
+            "   - Particle background using Canvas API\n"
+            "   - Dashboard stats with counter animation\n"
+            "   - 3D flip cards with CSS transform\n"
+            "   - Radar chart using Canvas API\n"
+            "   - Project filtering with data attributes\n"
+            "   - Blog section with cards\n"
+            "   - Testimonials carousel with auto-play\n"
+            "   - Multi-step form with validation\n"
+            "   - File upload with drag & drop\n"
+            "   - Dark mode toggle with localStorage\n"
+            "   - Back to top button\n"
+            "6. Combine ALL operations into ONE python_exec call\n\n"
             "Available tools:\n" + tools_text + "\n\n"
             "Output format:\n"
-            '{\"tool\": \"tool_name\", \"params\": {\"key\": \"value\"}}'
+            "{\"tool\": \"tool_name\", \"params\": {\"key\": \"value\"}}\n\n"
+            "Token Budget: Completion tokens minimal. Code exempt. Other output <= 500 tokens."
         )
         messages.append({"role": "developer", "content": developer_content})
         user_content = "Goal: " + goal + "\nCurrent step: " + step_desc
@@ -303,7 +338,7 @@ class Agent:
         prompt = "\n\n".join(parts)
         for m in messages:
             role = m["role"].upper()
-            content_preview = m["content"][:300]
+            content_preview = m["content"]  # No truncation for full logs
             self.log("[" + role + "] " + content_preview, "MSG")
         self.log("Full prompt sent to LLM", "API_REQ")
         tools = self.tool_registry.list_tools()
@@ -313,7 +348,7 @@ class Agent:
             if self.llm.use_stream and self.debug:
                 self.log("LLM response complete (" + str(len(response)) + " chars)", "API_RES")
             else:
-                self.log("LLM response: " + response[:300], "API_RES")
+                self.log("LLM response: " + response, "API_RES")  # No truncation
             decision = self._parse_json(response)
             if decision:
                 return decision
@@ -423,3 +458,4 @@ class Agent:
         if self.memory:
             return self.memory.get_summary()
         return {"error": "no memory configured"}
+
